@@ -5,6 +5,7 @@ export interface Message {
   imageUrl: string;
   stickerUrl: string;
   voiceUrl: string;
+  createdAt: string;
 }
 
 // const messageSchema = new mongoose.Schema({

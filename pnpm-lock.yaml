@@ -11,6 +11,9 @@ importers:
       axios:
         specifier: ^1.13.2
         version: 1.13.2
+      lucide-react:
+        specifier: ^0.553.0
+        version: 0.553.0(react@19.2.0)
       react:
         specifier: ^19.2.0
         version: 19.2.0
@@ -20,6 +23,9 @@ importers:
       socket.io-client:
         specifier: ^4.8.1
         version: 4.8.1
+      unique-names-generator:
+        specifier: ^4.7.1
+        version: 4.7.1
     devDependencies:
       '@eslint/js':
         specifier: ^9.39.1
@@ -1925,6 +1931,11 @@ packages:
   lru-cache@5.1.1:
     resolution: {integrity: sha512-KpNARQA3Iwv+jTA0utUVVbrh+Jlrr1Fv0e56GGzAFOXN7dk/FviaDW8LHmK52DlcH4WP2n6gI8vN1aesBFgo9w==}
 
+  lucide-react@0.553.0:
+    resolution: {integrity: sha512-BRgX5zrWmNy/lkVAe0dXBgd7XQdZ3HTf+Hwe3c9WK6dqgnj9h+hxV+MDncM88xDWlCq27+TKvHGE70ViODNILw==}
+    peerDependencies:
+      react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
+
   magic-string@0.25.9:
     resolution: {integrity: sha512-RmF0AsMzgt25qzqqLc1+MbHmhdx0ojF2Fvs4XnOqz2ZOBXzzkEwc/dJQZCYHAn7v1jbVOjAZfK8msRn4BxO4VQ==}
 
@@ -2483,6 +2494,10 @@ packages:
   unicode-property-aliases-ecmascript@2.2.0:
     resolution: {integrity: sha512-hpbDzxUY9BFwX+UeBnxv3Sh1q7HFxj48DTmXchNgRa46lO8uj3/1iEn3MiNUYTg1g9ctIqXCCERn8gYZhHC5lQ==}
     engines: {node: '>=4'}
+
+  unique-names-generator@4.7.1:
+    resolution: {integrity: sha512-lMx9dX+KRmG8sq6gulYYpKWZc9RlGsgBR6aoO8Qsm3qvkSJ+3rAymr+TnV8EDMrIrwuFJ4kruzMWM/OpYzPoow==}
+    engines: {node: '>=8'}
 
   unique-string@2.0.0:
     resolution: {integrity: sha512-uNaeirEPvpZWSgzwsPGtU2zVSTrn/8L5q/IexZmH0eH6SA73CmAA5U4GwORTxQAZs95TAXLNqeLoPPNO5gZfWg==}
@@ -4712,6 +4727,10 @@ snapshots:
     dependencies:
       yallist: 3.1.1
 
+  lucide-react@0.553.0(react@19.2.0):
+    dependencies:
+      react: 19.2.0
+
   magic-string@0.25.9:
     dependencies:
       sourcemap-codec: 1.4.8
@@ -5352,6 +5371,8 @@ snapshots:
   unicode-match-property-value-ecmascript@2.2.1: {}
 
   unicode-property-aliases-ecmascript@2.2.0: {}
+
+  unique-names-generator@4.7.1: {}
 
   unique-string@2.0.0:
     dependencies:

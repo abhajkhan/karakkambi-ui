@@ -11,5 +11,5 @@
 
 body {
   background: linear-gradient(135deg, var(--bg-dark), var(--bg-light));
-  min-height: 100vh;
+  /* min-height: 100vh; */
 }
