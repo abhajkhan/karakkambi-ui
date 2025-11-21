@@ -7,7 +7,7 @@ const SOCKET_SERVER_URL = import.meta.env.VITE_SOCKET_URL;
 const API_BASE_URL = SOCKET_SERVER_URL + '/api';
 
 export const get_messages = async () => {
-    const response: AxiosResponse<MessageResponseModel[]> = await axios.get(`${API_BASE_URL}/messages`);
-    console.log(response.data);
-    return response.data;
+    const response: AxiosResponse<MessageResponseModel> = await axios.get(`${API_BASE_URL}/messages`);
+    console.log(response.data.messages);
+    return response.data.messages;
 }

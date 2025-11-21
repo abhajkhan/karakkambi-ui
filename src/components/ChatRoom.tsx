@@ -3,14 +3,14 @@ import { useSocket } from '../hooks/useSocket';
 import { formatTimestamp } from '../utils/timeFormatter';
 import { MessageBubble } from './MessageBubble';
 import { Send, Users, Wifi, WifiOff } from 'lucide-react';
-import type { MessageResponseModel } from '../types/index'
+import type { ResponseMessageItem } from '../types/index'
 import { get_messages } from '../services/messageService';
 
 const SOCKET_SERVER_URL = import.meta.env.VITE_SOCKET_URL;
 
 export const ChatRoom = () => {
   const [inputMessage, setInputMessage] = useState('');
-  const [historicalMessages, setHistoricalMessages] = useState<MessageResponseModel[]>([]);
+  const [historicalMessages, setHistoricalMessages] = useState<ResponseMessageItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { messages: socketMessages, sendMessage, onlineUsers, connected } = useSocket(SOCKET_SERVER_URL);
@@ -25,7 +25,7 @@ export const ChatRoom = () => {
     try {
       setIsLoading(true);
       setError(null);
-      const response_data: MessageResponseModel[] = await get_messages();
+      const response_data: ResponseMessageItem[] = await get_messages();
       setHistoricalMessages(response_data);
     } catch (err) {
       console.error('Failed to fetch messages:', err);
@@ -54,14 +54,6 @@ export const ChatRoom = () => {
       handleSubmit(e);
     }
   };
-
-  // Transform API messages to match MessageBubble format
-  // const transformedHistoricalMessages = historicalMessages.map(msg => ({
-  //   id: msg._id,
-  //   username: msg.username,
-  //   message: msg.text,
-  //   CreatedAt: msg.createdAt
-  // }));
 
   // Combine and sort all messages
   const allMessages = [...historicalMessages, ...socketMessages].sort((a, b) => {
