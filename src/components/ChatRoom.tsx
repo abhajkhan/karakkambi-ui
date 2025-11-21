@@ -13,20 +13,32 @@ export const ChatRoom = () => {
   const [historicalMessages, setHistoricalMessages] = useState<ResponseMessageItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(true);
   const { messages: socketMessages, sendMessage, onlineUsers, connected } = useSocket(SOCKET_SERVER_URL);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const isInitialLoadRef = useRef(true);
 
   // Fetch historical messages on mount
   useEffect(() => {
     fetchMessages();
   }, []);
 
-  const fetchMessages = async () => {
+  const fetchMessages = async (cursor?: string) => {
     try {
       setIsLoading(true);
       setError(null);
-      const response_data: ResponseMessageItem[] = await get_messages();
-      setHistoricalMessages(response_data);
+      const response_data = await get_messages(cursor);
+
+      if (response_data.length < 50) {
+        setHasMore(false);
+      }
+
+      if (cursor) {
+        setHistoricalMessages(prev => [...response_data, ...prev]);
+      } else {
+        setHistoricalMessages(response_data);
+      }
     } catch (err) {
       console.error('Failed to fetch messages:', err);
       setError('Failed to load messages. Please refresh.');
@@ -35,10 +47,34 @@ export const ChatRoom = () => {
     }
   };
 
-  // Auto-scroll to bottom when messages update
+  const handleScroll = async () => {
+    const container = scrollContainerRef.current;
+    if (!container || isLoading || !hasMore) return;
+
+    if (container.scrollTop === 0 && historicalMessages.length > 0) {
+      const oldScrollHeight = container.scrollHeight;
+      const oldestMessage = historicalMessages[0];
+
+      await fetchMessages(oldestMessage.createdAt);
+
+      // Restore scroll position
+      requestAnimationFrame(() => {
+        container.scrollTop = container.scrollHeight - oldScrollHeight;
+      });
+    }
+  };
+
+  // Auto-scroll to bottom when new socket messages arrive or on initial load
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [socketMessages, historicalMessages]);
+    if (isInitialLoadRef.current && !isLoading && historicalMessages.length > 0) {
+      // Initial load done
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+      isInitialLoadRef.current = false;
+    } else if (socketMessages.length > 0) {
+      // New socket message
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [socketMessages, isLoading, historicalMessages.length]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -103,7 +139,11 @@ export const ChatRoom = () => {
       </header>
 
       {/* Messages Container */}
-      <div className="flex-1 overflow-y-auto">
+      <div
+        className="flex-1 overflow-y-auto"
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+      >
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3">
           {/* Loading State */}
           {isLoading && (
