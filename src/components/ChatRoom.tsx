@@ -5,6 +5,7 @@ import { MessageBubble } from './MessageBubble';
 import { Send, Users, Wifi, WifiOff } from 'lucide-react';
 import type { ResponseMessageItem } from '../types/index'
 import { get_messages } from '../services/messageService';
+import { MAX_MESSAGE_LENGTH, MESSAGE_COOLDOWN } from '../constants';
 
 const SOCKET_SERVER_URL = import.meta.env.VITE_SOCKET_URL;
 
@@ -18,6 +19,8 @@ export const ChatRoom = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isInitialLoadRef = useRef(true);
+  const lastMessageTimeRef = useRef<number>(0);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   // Fetch historical messages on mount
   useEffect(() => {
@@ -78,10 +81,24 @@ export const ChatRoom = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (inputMessage.trim()) {
-      sendMessage(inputMessage);
-      setInputMessage('');
+
+    if (!inputMessage.trim()) return;
+
+    if (inputMessage.length > MAX_MESSAGE_LENGTH) {
+      setValidationError(`Message exceeds ${MAX_MESSAGE_LENGTH} characters`);
+      return;
     }
+
+    const now = Date.now();
+    if (now - lastMessageTimeRef.current < MESSAGE_COOLDOWN) {
+      setValidationError(`Please wait ${MESSAGE_COOLDOWN / 1000}s before sending another message`);
+      return;
+    }
+
+    sendMessage(inputMessage);
+    setInputMessage('');
+    setValidationError(null);
+    lastMessageTimeRef.current = now;
   };
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -196,11 +213,15 @@ export const ChatRoom = () => {
             <input
               type="text"
               value={inputMessage}
-              onChange={(e) => setInputMessage(e.target.value)}
+              onChange={(e) => {
+                setInputMessage(e.target.value);
+                if (validationError) setValidationError(null);
+              }}
               onKeyPress={handleKeyPress}
               placeholder="Type your message..."
               disabled={!connected || isLoading}
-              className="flex-1 px-4 py-2.5 bg-gray-800/90 backdrop-blur-xl text-gray-100 placeholder-gray-500 rounded-2xl border border-gray-700/50 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg text-[15px]"
+              className={`flex-1 px-4 py-2.5 bg-gray-800/90 backdrop-blur-xl text-gray-100 placeholder-gray-500 rounded-2xl border focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg text-[15px] ${inputMessage.length > MAX_MESSAGE_LENGTH ? 'border-red-500/50' : 'border-gray-700/50'
+                }`}
               autoComplete="off"
             />
             <button
@@ -211,6 +232,21 @@ export const ChatRoom = () => {
               <Send className="w-4 h-4" />
               <span className="hidden sm:inline text-sm">Send</span>
             </button>
+          </div>
+
+          {/* Validation Feedback */}
+          <div className="flex justify-between items-center mt-2 px-2">
+            <span className="text-xs text-red-400 min-h-[1.25rem]">
+              {validationError}
+            </span>
+            <span className={`text-xs font-medium transition-colors ${inputMessage.length > MAX_MESSAGE_LENGTH
+                ? 'text-red-400'
+                : inputMessage.length > MAX_MESSAGE_LENGTH * 0.9
+                  ? 'text-yellow-400'
+                  : 'text-gray-500'
+              }`}>
+              {inputMessage.length} / {MAX_MESSAGE_LENGTH}
+            </span>
           </div>
         </div>
       </div>
