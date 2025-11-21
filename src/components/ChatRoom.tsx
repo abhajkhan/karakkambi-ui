@@ -75,7 +75,7 @@ export const ChatRoom = () => {
             <div className="w-20 sm:w-24">
               <div className="flex items-center gap-2">
                 <Users className="w-3 h-3 text-gray-400" />
-                <p className="text-xs text-gray-400 hidden sm:inline">{onlineUsers}</p>
+                <p className="text-xs text-gray-400 hidden sm:inline truncate">Online : {onlineUsers}</p>
               </div>
             </div>
 
@@ -103,8 +103,8 @@ export const ChatRoom = () => {
       </header>
 
       {/* Messages Container */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3">
+      <div className="flex-1 overflow-y-auto min-h-0 pt-[70px] pb-[70px]">
+        <div className="max-w-4xl w-full mx-auto px-4 sm:px-6 py-3 box-border">
           {/* Loading State */}
           {isLoading && (
             <div className="text-center mb-6">
