@@ -1,10 +1,10 @@
 export interface Message {
-  id : string;
+  id: string;
   username: string;
   text: string;
-  imageUrl: string;
-  stickerUrl: string;
-  voiceUrl: string;
+  imageUrl?: string;
+  stickerUrl?: string;
+  voiceUrl?: string;
   createdAt: string;
 }
 
@@ -16,3 +16,11 @@ export interface Message {
 //   voiceUrl: { type: String },
 //   createdAt: { type: Date, default: Date.now }
 // });
+
+export interface MessageResponseModel {
+  id: string,
+  username: string,
+  text: string,
+  createdAt: string,
+}
+

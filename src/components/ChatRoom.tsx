@@ -1,32 +1,52 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useSocket } from '../hooks/useSocket';
+import { formatTimestamp } from '../utils/timeFormatter';
 import { MessageBubble } from './MessageBubble';
 import { Send, Users, Wifi, WifiOff } from 'lucide-react';
+import type { MessageResponseModel } from '../types/index'
+import { get_messages } from '../services/messageService';
 
 const SOCKET_SERVER_URL = import.meta.env.VITE_SOCKET_URL;
 
 export const ChatRoom = () => {
   const [inputMessage, setInputMessage] = useState('');
-  const { messages, sendMessage, onlineUsers, connected } = useSocket(SOCKET_SERVER_URL);
+  const [historicalMessages, setHistoricalMessages] = useState<MessageResponseModel[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { messages: socketMessages, sendMessage, onlineUsers, connected } = useSocket(SOCKET_SERVER_URL);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Fetch historical messages on mount
+  useEffect(() => {
+    fetchMessages();
+  }, []);
+
+  const fetchMessages = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const response_data: MessageResponseModel[] = await get_messages();
+      setHistoricalMessages(response_data);
+    } catch (err) {
+      console.error('Failed to fetch messages:', err);
+      setError('Failed to load messages. Please refresh.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Auto-scroll to bottom when messages update
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [socketMessages, historicalMessages]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    sendMessage(inputMessage);
-    setInputMessage('');
+    if (inputMessage.trim()) {
+      sendMessage(inputMessage);
+      setInputMessage('');
+    }
   };
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -34,7 +54,25 @@ export const ChatRoom = () => {
       handleSubmit(e);
     }
   };
-  
+
+  // Transform API messages to match MessageBubble format
+  // const transformedHistoricalMessages = historicalMessages.map(msg => ({
+  //   id: msg._id,
+  //   username: msg.username,
+  //   message: msg.text,
+  //   CreatedAt: msg.createdAt
+  // }));
+
+  // Combine and sort all messages
+  const allMessages = [...historicalMessages, ...socketMessages].sort((a, b) => {
+    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+  });
+
+  // Remove duplicates by ID
+  const uniqueMessages = allMessages.filter((msg, index, self) =>
+    index === self.findIndex((m) => m.id === msg.id)
+  );
+
   return (
     <div className="flex flex-col h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 overflow-hidden">
       {/* Header with Glassmorphism */}
@@ -48,21 +86,20 @@ export const ChatRoom = () => {
                 <p className="text-xs text-gray-400 hidden sm:inline">{onlineUsers}</p>
               </div>
             </div>
-            
+
             {/* Centered Title */}
             <div className="flex-1 text-center">
               <h1 className="text-xl sm:text-2xl font-semibold text-white tracking-tight">
                 Karakkambi
               </h1>
             </div>
-            
+
             {/* Connection Status */}
             <div className="w-20 sm:w-24 flex justify-end">
-              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-xl transition-all ${
-                connected 
-                  ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
-                  : 'bg-red-500/20 text-red-400 border border-red-500/30'
-              }`}>
+              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-xl transition-all ${connected
+                ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                }`}>
                 {connected ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
                 <span className="text-xs font-medium hidden sm:inline">
                   {connected ? 'Connected' : 'Disconnected'}
@@ -76,7 +113,27 @@ export const ChatRoom = () => {
       {/* Messages Container */}
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3">
-          {!connected && (
+          {/* Loading State */}
+          {isLoading && (
+            <div className="text-center mb-6">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gray-700/40 backdrop-blur-xl text-gray-400 text-sm border border-gray-600/40">
+                <div className="w-2 h-2 rounded-full bg-gray-400 animate-pulse" />
+                Loading messages...
+              </div>
+            </div>
+          )}
+
+          {/* Error State */}
+          {error && (
+            <div className="text-center mb-6">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-red-500/20 backdrop-blur-xl text-red-400 text-sm border border-red-500/30">
+                {error}
+              </div>
+            </div>
+          )}
+
+          {/* Connection Status */}
+          {!connected && !isLoading && (
             <div className="text-center mb-6">
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-yellow-500/20 backdrop-blur-xl text-yellow-400 text-sm border border-yellow-500/30">
                 <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
@@ -84,11 +141,15 @@ export const ChatRoom = () => {
               </div>
             </div>
           )}
-          
-          {messages.map((msg) => (
-            <MessageBubble 
-              key={msg.id} 
-              message={msg} 
+
+          {/* Messages */}
+          {!isLoading && uniqueMessages.map((msg) => (
+            <MessageBubble
+              key={msg.id}
+              message={{
+                ...msg,
+                createdAt: formatTimestamp(msg.createdAt)
+              }}
               isOwn={msg.username === 'You'}
             />
           ))}
@@ -106,13 +167,13 @@ export const ChatRoom = () => {
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyPress={handleKeyPress}
               placeholder="Type your message..."
-              disabled={!connected}
+              disabled={!connected || isLoading}
               className="flex-1 px-4 py-2.5 bg-gray-800/90 backdrop-blur-xl text-gray-100 placeholder-gray-500 rounded-2xl border border-gray-700/50 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg text-[15px]"
               autoComplete="off"
             />
             <button
               onClick={handleSubmit}
-              disabled={!connected || !inputMessage.trim()}
+              disabled={!connected || !inputMessage.trim() || isLoading}
               className="px-4 sm:px-6 py-3 bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-2xl hover:from-blue-500 hover:to-blue-600 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-500/20 disabled:shadow-none flex items-center justify-center gap-2 font-medium"
             >
               <Send className="w-4 h-4" />
