@@ -140,7 +140,7 @@ export const ChatRoom = () => {
 
       {/* Messages Container */}
       <div
-        className="flex-1 overflow-y-auto min-h-0 pt-[70px] pb-[70px]"
+        className="flex-1 overflow-y-auto min-h-0 "
         ref={scrollContainerRef}
         onScroll={handleScroll}
       >
