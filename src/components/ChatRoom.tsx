@@ -134,8 +134,8 @@ export const ChatRoom = () => {
 
             {/* Centered Title */}
             <div className="flex-1 text-center">
-              <h1 className="text-xl sm:text-2xl font-semibold text-white tracking-tight">
-                Karakkambi
+              <h1 className="text-xl sm:text-2xl font-semibold text-white tracking-tight chilanka-regular">
+                കരക്കമ്പി 💬
               </h1>
             </div>
 
@@ -240,10 +240,10 @@ export const ChatRoom = () => {
               {validationError}
             </span>
             <span className={`text-xs font-medium transition-colors ${inputMessage.length > MAX_MESSAGE_LENGTH
-                ? 'text-red-400'
-                : inputMessage.length > MAX_MESSAGE_LENGTH * 0.9
-                  ? 'text-yellow-400'
-                  : 'text-gray-500'
+              ? 'text-red-400'
+              : inputMessage.length > MAX_MESSAGE_LENGTH * 0.9
+                ? 'text-yellow-400'
+                : 'text-gray-500'
               }`}>
               {inputMessage.length} / {MAX_MESSAGE_LENGTH}
             </span>
