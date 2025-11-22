@@ -5,6 +5,7 @@ import { MessageBubble } from './MessageBubble';
 import { Send, Users, Wifi, WifiOff } from 'lucide-react';
 import type { ResponseMessageItem } from '../types/index'
 import { get_messages } from '../services/messageService';
+import { MAX_MESSAGE_LENGTH, MESSAGE_COOLDOWN } from '../constants';
 
 const SOCKET_SERVER_URL = import.meta.env.VITE_SOCKET_URL;
 
@@ -13,20 +14,34 @@ export const ChatRoom = () => {
   const [historicalMessages, setHistoricalMessages] = useState<ResponseMessageItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(true);
   const { messages: socketMessages, sendMessage, onlineUsers, connected } = useSocket(SOCKET_SERVER_URL);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const isInitialLoadRef = useRef(true);
+  const lastMessageTimeRef = useRef<number>(0);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   // Fetch historical messages on mount
   useEffect(() => {
     fetchMessages();
   }, []);
 
-  const fetchMessages = async () => {
+  const fetchMessages = async (cursor?: string) => {
     try {
       setIsLoading(true);
       setError(null);
-      const response_data: ResponseMessageItem[] = await get_messages();
-      setHistoricalMessages(response_data);
+      const response_data = await get_messages(cursor);
+
+      if (response_data.length < 50) {
+        setHasMore(false);
+      }
+
+      if (cursor) {
+        setHistoricalMessages(prev => [...response_data, ...prev]);
+      } else {
+        setHistoricalMessages(response_data);
+      }
     } catch (err) {
       console.error('Failed to fetch messages:', err);
       setError('Failed to load messages. Please refresh.');
@@ -35,17 +50,55 @@ export const ChatRoom = () => {
     }
   };
 
-  // Auto-scroll to bottom when messages update
+  const handleScroll = async () => {
+    const container = scrollContainerRef.current;
+    if (!container || isLoading || !hasMore) return;
+
+    if (container.scrollTop === 0 && historicalMessages.length > 0) {
+      const oldScrollHeight = container.scrollHeight;
+      const oldestMessage = historicalMessages[0];
+
+      await fetchMessages(oldestMessage.createdAt);
+
+      // Restore scroll position
+      requestAnimationFrame(() => {
+        container.scrollTop = container.scrollHeight - oldScrollHeight;
+      });
+    }
+  };
+
+  // Auto-scroll to bottom when new socket messages arrive or on initial load
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [socketMessages, historicalMessages]);
+    if (isInitialLoadRef.current && !isLoading && historicalMessages.length > 0) {
+      // Initial load done
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+      isInitialLoadRef.current = false;
+    } else if (socketMessages.length > 0) {
+      // New socket message
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [socketMessages, isLoading, historicalMessages.length]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (inputMessage.trim()) {
-      sendMessage(inputMessage);
-      setInputMessage('');
+
+    if (!inputMessage.trim()) return;
+
+    if (inputMessage.length > MAX_MESSAGE_LENGTH) {
+      setValidationError(`Message exceeds ${MAX_MESSAGE_LENGTH} characters`);
+      return;
     }
+
+    const now = Date.now();
+    if (now - lastMessageTimeRef.current < MESSAGE_COOLDOWN) {
+      setValidationError(`Please wait ${MESSAGE_COOLDOWN / 1000}s before sending another message`);
+      return;
+    }
+
+    sendMessage(inputMessage);
+    setInputMessage('');
+    setValidationError(null);
+    lastMessageTimeRef.current = now;
   };
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -83,14 +136,14 @@ export const ChatRoom = () => {
             <div className="w-20 sm:w-24 flex-shrink-0">
               <div className="flex items-center gap-2">
                 <Users className="w-3 h-3 text-gray-400" />
-                <p className="text-xs text-gray-400 hidden sm:inline truncate">{onlineUsers}</p>
+                <p className="text-xs text-gray-400 hidden sm:inline truncate">Online : {onlineUsers}</p>
               </div>
             </div>
 
             {/* Centered Title */}
-            <div className="flex-1 text-center min-w-0 px-2">
-              <h1 className="text-xl sm:text-2xl font-semibold text-white tracking-tight truncate">
-                Karakkambi
+            <div className="flex-1 text-center">
+              <h1 className="text-xl sm:text-2xl font-semibold text-white tracking-tight chilanka-regular">
+                കരക്കമ്പി 💬
               </h1>
             </div>
 
@@ -111,7 +164,11 @@ export const ChatRoom = () => {
       </header>
 
       {/* Messages Container */}
-      <div className="flex-1 overflow-y-auto min-h-0 pt-[70px]">
+      <div
+        className="flex-1 overflow-y-auto min-h-0 "
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+      >
         <div className="max-w-4xl w-full mx-auto px-4 sm:px-6 py-3 box-border">
           {/* Loading State */}
           {isLoading && (
@@ -164,11 +221,15 @@ export const ChatRoom = () => {
             <input
               type="text"
               value={inputMessage}
-              onChange={(e) => setInputMessage(e.target.value)}
+              onChange={(e) => {
+                setInputMessage(e.target.value);
+                if (validationError) setValidationError(null);
+              }}
               onKeyPress={handleKeyPress}
               placeholder="Type your message..."
               disabled={!connected || isLoading}
-              className="flex-1 min-w-0 px-4 py-2.5 bg-gray-800/90 backdrop-blur-xl text-gray-100 placeholder-gray-500 rounded-2xl border border-gray-700/50 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg text-[15px]"
+              className={`flex-1 px-4 py-2.5 bg-gray-800/90 backdrop-blur-xl text-gray-100 placeholder-gray-500 rounded-2xl border focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg text-[15px] ${inputMessage.length > MAX_MESSAGE_LENGTH ? 'border-red-500/50' : 'border-gray-700/50'
+                }`}
               autoComplete="off"
             />
             <button
@@ -179,7 +240,22 @@ export const ChatRoom = () => {
               <Send className="w-4 h-4" />
               <span className="hidden sm:inline text-sm">Send</span>
             </button>
-          </form>
+          </div>
+
+          {/* Validation Feedback */}
+          <div className="flex justify-between items-center mt-2 px-2">
+            <span className="text-xs text-red-400 min-h-[1.25rem]">
+              {validationError}
+            </span>
+            <span className={`text-xs font-medium transition-colors ${inputMessage.length > MAX_MESSAGE_LENGTH
+              ? 'text-red-400'
+              : inputMessage.length > MAX_MESSAGE_LENGTH * 0.9
+                ? 'text-yellow-400'
+                : 'text-gray-500'
+              }`}>
+              {inputMessage.length} / {MAX_MESSAGE_LENGTH}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -216,6 +292,6 @@ export const ChatRoom = () => {
           background: rgba(107, 114, 128, 0.7);
         }
       `}</style>
-    </div>
+    </div >
   );
 };
