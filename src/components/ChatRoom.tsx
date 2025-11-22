@@ -9,6 +9,9 @@ import { MAX_MESSAGE_LENGTH, MESSAGE_COOLDOWN } from '../constants';
 
 const SOCKET_SERVER_URL = import.meta.env.VITE_SOCKET_URL;
 
+const HEADER_HEIGHT = 64;
+const FOOTER_HEIGHT = 94;
+
 export const ChatRoom = () => {
   const [inputMessage, setInputMessage] = useState('');
   const [historicalMessages, setHistoricalMessages] = useState<ResponseMessageItem[]>([]);
@@ -21,6 +24,7 @@ export const ChatRoom = () => {
   const isInitialLoadRef = useRef(true);
   const lastMessageTimeRef = useRef<number>(0);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
 
   // Fetch historical messages on mount
   useEffect(() => {
@@ -52,19 +56,23 @@ export const ChatRoom = () => {
 
   const handleScroll = async () => {
     const container = scrollContainerRef.current;
-    if (!container || isLoading || !hasMore) return;
+    if (!container) return;
 
-    if (container.scrollTop === 0 && historicalMessages.length > 0) {
+    // Existing pagination logic
+    if (container.scrollTop === 0 && !isLoading && hasMore && historicalMessages.length > 0) {
       const oldScrollHeight = container.scrollHeight;
       const oldestMessage = historicalMessages[0];
-
       await fetchMessages(oldestMessage.createdAt);
-
-      // Restore scroll position
       requestAnimationFrame(() => {
         container.scrollTop = container.scrollHeight - oldScrollHeight;
       });
     }
+
+    // New bottom-detection logic
+    const threshold = 120;
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+
+    setShowScrollToBottom(distanceFromBottom > threshold);
   };
 
   // Auto-scroll to bottom when new socket messages arrive or on initial load
@@ -119,34 +127,45 @@ export const ChatRoom = () => {
   );
 
   return (
-    <div className="flex flex-col h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 overflow-hidden">
-      {/* Header with Glassmorphism */}
-      <header className="backdrop-blur-xl bg-gray-900/70 border-b border-gray-700/50 shadow-2xl">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3">
-          <div className="flex items-center justify-between">
+    <div
+      className="relative w-full h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 overflow-hidden"
+      style={{
+        // Respect device safe areas on phones with notches
+        paddingLeft: 'env(safe-area-inset-left)',
+        paddingRight: 'env(safe-area-inset-right)',
+        boxSizing: 'border-box',
+      }}
+    >
+      {/* Fixed Header */}
+      <header
+        className="backdrop-blur-xl bg-gray-900/70 border-b border-gray-700/50 shadow-2xl fixed top-0 left-0 right-0 z-50"
+        style={{ height: `${HEADER_HEIGHT}px`, display: 'flex', alignItems: 'center' }}
+      >
+        <div className="max-w-4xl w-full mx-auto px-4 sm:px-6 box-border">
+          <div className="flex items-center justify-between min-w-0">
             {/* Left spacer for balance */}
-            <div className="w-20 sm:w-24">
+            <div className="w-20 sm:w-24 flex-shrink-0">
               <div className="flex items-center gap-2">
                 <Users className="w-3 h-3 text-gray-400" />
-                <p className="text-xs text-gray-400 hidden sm:inline truncate">Online : {onlineUsers}</p>
+                <p className="text-xs text-gray-400 sm:inline truncate">Online : {onlineUsers}</p>
               </div>
             </div>
 
             {/* Centered Title */}
-            <div className="flex-1 text-center">
-              <h1 className="text-xl sm:text-2xl font-semibold text-white tracking-tight chilanka-regular">
+            <div className="flex-1 text-center min-w-0 px-2">
+              <h1 className="text-lg sm:text-2xl font-semibold text-white tracking-tight truncate chilanka-regular">
                 കരക്കമ്പി 💬
               </h1>
             </div>
 
             {/* Connection Status */}
-            <div className="w-20 sm:w-24 flex justify-end">
+            <div className="w-20 sm:w-24 flex justify-end flex-shrink-0">
               <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-xl transition-all ${connected
                 ? 'bg-green-500/20 text-green-400 border border-green-500/30'
                 : 'bg-red-500/20 text-red-400 border border-red-500/30'
                 }`}>
                 {connected ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
-                <span className="text-xs font-medium hidden sm:inline">
+                <span className="text-xs font-medium hidden sm:inline truncate">
                   {connected ? 'Connected' : 'Disconnected'}
                 </span>
               </div>
@@ -155,13 +174,21 @@ export const ChatRoom = () => {
         </div>
       </header>
 
-      {/* Messages Container */}
+      {/* Scrollable messages area.
+          We set an explicit height calc to fill the area between the fixed header and footer.
+          This avoids any extra vertical scrolling when there are no messages. */}
       <div
-        className="flex-1 overflow-y-auto min-h-0 "
         ref={scrollContainerRef}
         onScroll={handleScroll}
+        className="w-full overflow-y-auto overflow-x-hidden"
+        style={{
+          // height = viewport - header - footer
+          height: `calc(100vh - ${HEADER_HEIGHT}px - ${15}px)`,
+          paddingTop: `${HEADER_HEIGHT}px`, // push content below header visually (so inner content can be centered in its own container)
+          boxSizing: 'border-box',
+        }}
       >
-        <div className="max-w-4xl w-full mx-auto px-4 sm:px-6 py-3 box-border">
+        <div className="max-w-4xl w-full mx-auto px-4 sm:px-6 py-3 box-border min-w-0">
           {/* Loading State */}
           {isLoading && (
             <div className="text-center mb-6">
@@ -192,6 +219,11 @@ export const ChatRoom = () => {
           )}
 
           {/* Messages */}
+          {!isLoading && uniqueMessages.length === 0 && (
+            <div className="text-center text-sm text-gray-400 py-8">
+              No messages yet. Say hello.
+            </div>
+          )}
           {!isLoading && uniqueMessages.map((msg) => (
             <MessageBubble
               key={msg.id}
@@ -204,12 +236,62 @@ export const ChatRoom = () => {
           ))}
           <div ref={messagesEndRef} />
         </div>
+        {showScrollToBottom && (
+          <button
+            onClick={() => {
+              const container = scrollContainerRef.current;
+              if (container) {
+                container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+              }
+            }}
+            className="
+              fixed 
+              bottom-[100px] 
+              right-4 
+              z-50
+              flex 
+              items-center 
+              justify-center 
+              w-10 
+              h-10 
+              rounded-full 
+              bg-blue-600 
+              text-white 
+              shadow-lg 
+              active:scale-95 
+              transition-transform
+            "
+            aria-label="Scroll to bottom"
+          >
+            <svg
+              xmlns='http://www.w3.org/2000/svg'
+              fill='none'
+              viewBox='0 0 24 24'
+              strokeWidth='2'
+              stroke='currentColor'
+              className='w-5 h-5'
+            >
+              <path strokeLinecap='round' strokeLinejoin='round' d='M19 9l-7 7-7-7' />
+            </svg>
+          </button>
+        )}
+
       </div>
 
-      {/* Input Area with Glassmorphism */}
-      <div className="backdrop-blur-xl bg-gray-900/70 border-t border-gray-700/50 shadow-2xl">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4">
-          <div className="flex gap-2 sm:gap-3">
+      {/* Fixed Footer / Input area */}
+      <footer
+        className="backdrop-blur-xl bg-gray-900/70 border-t border-gray-700/50 shadow-2xl fixed left-0 right-0 bottom-0 z-50"
+        style={{
+          height: `${FOOTER_HEIGHT}px`,
+          display: 'flex',
+          alignItems: 'center',
+          boxSizing: 'border-box',
+          paddingLeft: 'env(safe-area-inset-left)',
+          paddingRight: 'env(safe-area-inset-right)',
+        }}
+      >
+        <div className="max-w-4xl w-full mx-auto px-4 sm:px-6 box-border">
+          <form onSubmit={handleSubmit} className="flex gap-2 sm:gap-3 items-center min-w-0">
             <input
               type="text"
               value={inputMessage}
@@ -220,19 +302,19 @@ export const ChatRoom = () => {
               onKeyPress={handleKeyPress}
               placeholder="Type your message..."
               disabled={!connected || isLoading}
-              className={`flex-1 px-4 py-2.5 bg-gray-800/90 backdrop-blur-xl text-gray-100 placeholder-gray-500 rounded-2xl border focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg text-[15px] ${inputMessage.length > MAX_MESSAGE_LENGTH ? 'border-red-500/50' : 'border-gray-700/50'
+              className={`flex-1 min-w-0 px-4 py-2.5 bg-gray-800/90 backdrop-blur-xl text-gray-100 placeholder-gray-500 rounded-2xl border focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg text-[15px] ${inputMessage.length > MAX_MESSAGE_LENGTH ? 'border-red-500/50' : 'border-gray-700/50'
                 }`}
               autoComplete="off"
             />
             <button
-              onClick={handleSubmit}
+              type="submit"
               disabled={!connected || !inputMessage.trim() || isLoading}
-              className="px-4 sm:px-6 py-3 bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-2xl hover:from-blue-500 hover:to-blue-600 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-500/20 disabled:shadow-none flex items-center justify-center gap-2 font-medium"
+              className="flex items-center justify-center gap-2 font-medium flex-shrink-0 px-3 sm:px-6 py-3 bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-2xl hover:from-blue-500 hover:to-blue-600 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-500/20 disabled:shadow-none"
             >
               <Send className="w-4 h-4" />
               <span className="hidden sm:inline text-sm">Send</span>
             </button>
-          </div>
+          </form>
 
           {/* Validation Feedback */}
           <div className="flex justify-between items-center mt-2 px-2">
@@ -249,38 +331,27 @@ export const ChatRoom = () => {
             </span>
           </div>
         </div>
-      </div>
+      </footer>
 
       <style>{`
         @keyframes fadeIn {
-          from {
-            opacity: 0;
-            transform: translateY(10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
         }
-        .animate-fadeIn {
-          animation: fadeIn 0.3s ease-out;
-        }
-        
+        .animate-fadeIn { animation: fadeIn 0.3s ease-out; }
+
+        /* Prevent horizontal overflow from long words/children */
+        html, body, #root { overflow-x: hidden; }
+
+        /* Small helper to allow truncation inside flex containers */
+        .min-w-0 { min-width: 0; }
+
         /* Custom scrollbar for dark theme */
-        ::-webkit-scrollbar {
-          width: 8px;
-        }
-        ::-webkit-scrollbar-track {
-          background: rgba(17, 24, 39, 0.3);
-        }
-        ::-webkit-scrollbar-thumb {
-          background: rgba(75, 85, 99, 0.5);
-          border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-          background: rgba(107, 114, 128, 0.7);
-        }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: rgba(17, 24, 39, 0.3); }
+        ::-webkit-scrollbar-thumb { background: rgba(75, 85, 99, 0.5); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(107, 114, 128, 0.7); }
       `}</style>
-    </div>
+    </div >
   );
 };
