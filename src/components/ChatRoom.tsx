@@ -24,6 +24,7 @@ export const ChatRoom = () => {
   const isInitialLoadRef = useRef(true);
   const lastMessageTimeRef = useRef<number>(0);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
 
   // Fetch historical messages on mount
   useEffect(() => {
@@ -55,19 +56,23 @@ export const ChatRoom = () => {
 
   const handleScroll = async () => {
     const container = scrollContainerRef.current;
-    if (!container || isLoading || !hasMore) return;
+    if (!container) return;
 
-    if (container.scrollTop === 0 && historicalMessages.length > 0) {
+    // Existing pagination logic
+    if (container.scrollTop === 0 && !isLoading && hasMore && historicalMessages.length > 0) {
       const oldScrollHeight = container.scrollHeight;
       const oldestMessage = historicalMessages[0];
-
       await fetchMessages(oldestMessage.createdAt);
-
-      // Restore scroll position
       requestAnimationFrame(() => {
         container.scrollTop = container.scrollHeight - oldScrollHeight;
       });
     }
+
+    // New bottom-detection logic
+    const threshold = 120;
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+
+    setShowScrollToBottom(distanceFromBottom > threshold);
   };
 
   // Auto-scroll to bottom when new socket messages arrive or on initial load
@@ -231,6 +236,46 @@ export const ChatRoom = () => {
           ))}
           <div ref={messagesEndRef} />
         </div>
+        {showScrollToBottom && (
+          <button
+            onClick={() => {
+              const container = scrollContainerRef.current;
+              if (container) {
+                container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+              }
+            }}
+            className="
+              fixed 
+              bottom-[100px] 
+              right-4 
+              z-50
+              flex 
+              items-center 
+              justify-center 
+              w-10 
+              h-10 
+              rounded-full 
+              bg-blue-600 
+              text-white 
+              shadow-lg 
+              active:scale-95 
+              transition-transform
+            "
+            aria-label="Scroll to bottom"
+          >
+            <svg
+              xmlns='http://www.w3.org/2000/svg'
+              fill='none'
+              viewBox='0 0 24 24'
+              strokeWidth='2'
+              stroke='currentColor'
+              className='w-5 h-5'
+            >
+              <path strokeLinecap='round' strokeLinejoin='round' d='M19 9l-7 7-7-7' />
+            </svg>
+          </button>
+        )}
+
       </div>
 
       {/* Fixed Footer / Input area */}
