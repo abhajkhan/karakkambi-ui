@@ -10,7 +10,7 @@ import { MAX_MESSAGE_LENGTH, MESSAGE_COOLDOWN } from '../constants';
 const SOCKET_SERVER_URL = import.meta.env.VITE_SOCKET_URL;
 
 const HEADER_HEIGHT = 64;
-const FOOTER_HEIGHT = 94;
+const FOOTER_HEIGHT = 80;
 
 export const ChatRoom = () => {
   const [inputMessage, setInputMessage] = useState('');
@@ -231,7 +231,6 @@ export const ChatRoom = () => {
                 ...msg,
                 createdAt: formatTimestamp(msg.createdAt)
               }}
-              isOwn={msg.username === 'You'}
             />
           ))}
           <div ref={messagesEndRef} />
@@ -317,19 +316,12 @@ export const ChatRoom = () => {
           </form>
 
           {/* Validation Feedback */}
-          <div className="flex justify-between items-center mt-2 px-2">
-            <span className="text-xs text-red-400 min-h-[1.25rem]">
+          {validationError && (
+            <p className="mt-2 text-sm text-red-400 flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
               {validationError}
-            </span>
-            <span className={`text-xs font-medium transition-colors ${inputMessage.length > MAX_MESSAGE_LENGTH
-              ? 'text-red-400'
-              : inputMessage.length > MAX_MESSAGE_LENGTH * 0.9
-                ? 'text-yellow-400'
-                : 'text-gray-500'
-              }`}>
-              {inputMessage.length} / {MAX_MESSAGE_LENGTH}
-            </span>
-          </div>
+            </p>
+          )}
         </div>
       </footer>
 
