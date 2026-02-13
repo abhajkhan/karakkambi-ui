@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useSocket } from '../hooks/useSocket';
-import { formatTimestamp } from '../utils/timeFormatter';
+import { getDateKey, formatDateForDisplay } from '../utils/timeFormatter';
 import { MessageBubble } from './MessageBubble';
 import { Send, Users, Wifi, WifiOff } from 'lucide-react';
 import type { ResponseMessageItem } from '../types/index'
@@ -126,6 +126,24 @@ export const ChatRoom = () => {
     index === self.findIndex((m) => m.id === msg.id)
   );
 
+  // Group messages by date for floating date bubbles
+  const getDateSeparator = (currentMsg: ResponseMessageItem, prevMsg: ResponseMessageItem | undefined): string | null => {
+    if (!prevMsg) {
+      // First message ever - always show date
+      return formatDateForDisplay(currentMsg.createdAt);
+    }
+
+    const currentDateKey = getDateKey(currentMsg.createdAt);
+    const prevDateKey = getDateKey(prevMsg.createdAt);
+
+    // If dates are different, show date bubble
+    if (currentDateKey !== prevDateKey) {
+      return formatDateForDisplay(currentMsg.createdAt);
+    }
+
+    return null;
+  };
+
   return (
     <div
       className="relative w-full h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 overflow-hidden"
@@ -224,15 +242,29 @@ export const ChatRoom = () => {
               No messages yet. Say hello.
             </div>
           )}
-          {!isLoading && uniqueMessages.map((msg) => (
-            <MessageBubble
-              key={msg.id}
-              message={{
-                ...msg,
-                createdAt: formatTimestamp(msg.createdAt)
-              }}
-            />
-          ))}
+          {!isLoading && uniqueMessages.map((msg, index) => {
+            const prevMsg = index > 0 ? uniqueMessages[index - 1] : undefined;
+            const dateSeparator = getDateSeparator(msg, prevMsg);
+            
+            return (
+              <React.Fragment key={msg.id}>
+                {dateSeparator && (
+                  <div className="flex justify-center my-4">
+                    <div className="px-3 py-1 rounded-full bg-gray-700/60 backdrop-blur-xl text-xs text-gray-300 border border-gray-600/40 shadow-lg">
+                      {dateSeparator}
+                    </div>
+                  </div>
+                )}
+                <MessageBubble
+                  key={msg.id}
+                  message={{
+                    ...msg,
+                    createdAt: msg.createdAt
+                  }}
+                />
+              </React.Fragment>
+            );
+          })}
           <div ref={messagesEndRef} />
         </div>
         {showScrollToBottom && (

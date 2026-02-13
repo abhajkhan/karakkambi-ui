@@ -1,4 +1,5 @@
 import type { Message } from '../types';
+import { formatTimeOnly } from '../utils/timeFormatter';
 
 interface Props {
   message: Message;
@@ -21,13 +22,10 @@ export const MessageBubble = ({ message }: Props) => {
           {message.text}
         </p>
 
-        {/* Timestamp: 
-            - mt-1 adds a tiny bit of vertical space if it wraps to a new line.
-            - ml-auto ensures it stays right-aligned. 
-        */}
+        {/* Timestamp: shows only time (e.g., "3:45 PM") */}
         <div className="mb-[-2px] ml-auto">
           <p className="text-[10px] text-gray-500 whitespace-nowrap">
-            {message.createdAt}
+            {formatTimeOnly(message.createdAt)}
           </p>
         </div>
 
