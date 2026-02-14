@@ -3,7 +3,7 @@ import { useSocket } from '../hooks/useSocket';
 import { getDateKey, formatDateForDisplay } from '../utils/timeFormatter';
 import { MessageBubble } from './MessageBubble';
 import { Send, Users, Wifi, WifiOff } from 'lucide-react';
-import type { ResponseMessageItem } from '../types/index'
+import type { Message } from '../types/index'
 import { get_messages } from '../services/messageService';
 import { MAX_MESSAGE_LENGTH, MESSAGE_COOLDOWN } from '../constants';
 
@@ -14,7 +14,8 @@ const FOOTER_HEIGHT = 80;
 
 export const ChatRoom = () => {
   const [inputMessage, setInputMessage] = useState('');
-  const [historicalMessages, setHistoricalMessages] = useState<ResponseMessageItem[]>([]);
+  const [replyTarget, setReplyTarget] = useState<Message | null>(null);
+  const [historicalMessages, setHistoricalMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
@@ -103,8 +104,9 @@ export const ChatRoom = () => {
       return;
     }
 
-    sendMessage(inputMessage);
+    sendMessage(inputMessage, replyTarget?.id);
     setInputMessage('');
+    setReplyTarget(null);
     setValidationError(null);
     lastMessageTimeRef.current = now;
   };
@@ -127,7 +129,7 @@ export const ChatRoom = () => {
   );
 
   // Group messages by date for floating date bubbles
-  const getDateSeparator = (currentMsg: ResponseMessageItem, prevMsg: ResponseMessageItem | undefined): string | null => {
+  const getDateSeparator = (currentMsg: Message, prevMsg: Message | undefined): string | null => {
     if (!prevMsg) {
       // First message ever - always show date
       return formatDateForDisplay(currentMsg.createdAt);
@@ -245,7 +247,12 @@ export const ChatRoom = () => {
           {!isLoading && uniqueMessages.map((msg, index) => {
             const prevMsg = index > 0 ? uniqueMessages[index - 1] : undefined;
             const dateSeparator = getDateSeparator(msg, prevMsg);
-            
+
+            console.log('Rendering message:', msg,"\n Messages List: ", uniqueMessages);
+            const repliedMessage = msg.replyTo
+            ? uniqueMessages.find(m => m.id === msg.replyTo)
+            : null;
+
             return (
               <React.Fragment key={msg.id}>
                 {dateSeparator && (
@@ -261,6 +268,8 @@ export const ChatRoom = () => {
                     ...msg,
                     createdAt: msg.createdAt
                   }}
+                  onReply={setReplyTarget}
+                  repliedMessage = {repliedMessage}
                 />
               </React.Fragment>
             );
@@ -323,6 +332,16 @@ export const ChatRoom = () => {
       >
         <div className="max-w-4xl w-full mx-auto px-4 sm:px-6 box-border">
           <form onSubmit={handleSubmit} className="flex gap-2 sm:gap-3 items-center min-w-0">
+            {replyTarget && (
+              <div className="flex items-center justify-between bg-gray-800 px-3 py-2 text-sm">
+                <div className="truncate">
+                  Replying to: {replyTarget.text}
+                </div>
+                <button
+                  onClick={() => setReplyTarget(null)}
+                  className="text-gray-400 hover:text-white">✕</button>
+              </div>
+            )}
             <input
               type="text"
               value={inputMessage}

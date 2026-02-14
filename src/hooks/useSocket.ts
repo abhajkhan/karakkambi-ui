@@ -1,15 +1,6 @@
 import { useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import type { Message } from '../types/index';
-import { uniqueNamesGenerator, adjectives, animals, colors } from 'unique-names-generator';
-
-function generateRandomUsername() {
-  return uniqueNamesGenerator({
-    dictionaries: [adjectives, colors, animals],
-    separator: '',
-    style: 'capital',
-  });
-}
 
 export const useSocket = (serverUrl: string) => {
 
@@ -59,11 +50,10 @@ export const useSocket = (serverUrl: string) => {
     };
   }, [serverUrl]);
 
-  const sendMessage = (text: string, username = generateRandomUsername()) => {
+  const sendMessage = (text: string, replyTarget?: string) => {
     if (socket && text.trim() && connected) {
-      const message = { username, text };
-      socket.emit('send_message', message);
-      console.log('🧭 Sent message:', message);
+      const payload = { text, replyTo: replyTarget };
+      socket.emit('send_message', payload);
     }
   };
 
