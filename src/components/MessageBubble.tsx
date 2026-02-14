@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import type { Message } from '../types';
 import { formatTimeOnly } from '../utils/timeFormatter';
 import { useSwipeable } from "react-swipeable";
