@@ -1,3 +1,4 @@
+import { useState, useRef } from 'react';
 import type { Message } from '../types';
 import { formatTimeOnly } from '../utils/timeFormatter';
 import { useSwipeable } from "react-swipeable";
@@ -9,18 +10,61 @@ interface Props {
 }
 
 export const MessageBubble = ({ message, onReply, repliedMessage }: Props) => {
+  const [swipeProgress, setSwipeProgress] = useState(0);
+  const [isSwiping, setIsSwiping] = useState(false);
 
   const handlers = useSwipeable({
+    onSwipeStart: () => setIsSwiping(true),
+    onSwiped: () => {
+      setIsSwiping(false);
+      setSwipeProgress(0);
+    },
+    onSwiping: (event) => {
+      // Only track right swipes (positive delta)
+      if (event.deltaX > 0) {
+        // Calculate progress (0 to 1) with max 100px swipe distance
+        const progress = Math.min(event.deltaX / 100, 1);
+        setSwipeProgress(progress);
+      }
+    },
     onSwipedRight: () => onReply(message),
-    delta: 50,
+    delta: 30, // Lower threshold for more responsive feel
     preventScrollOnSwipe: true,
-    trackTouch: true
+    trackTouch: true,
+    trackMouse: true, // Enable for desktop touchpad
   });
 
+  // Calculate transform based on swipe progress
+  const swipeTransform = isSwiping ? `translateX(${swipeProgress * 80}px)` : 'translateX(0)';
+  const replyOpacity = isSwiping ? Math.min(swipeProgress * 1.5, 1) : 0;
+  const bubbleOpacity = isSwiping ? Math.max(1 - swipeProgress * 0.3, 0.7) : 1;
+
   return (
-    <div {...handlers} className="relative">
-      <div className="flex justify-start mb-2 animate-fadeIn">
-        <div className="max-w-[85%] sm:max-w-md px-3 py-1.5 rounded-lg shadow-lg bg-gray-800/90 backdrop-blur-xl text-gray-100 border border-gray-700/50">
+    <div {...handlers} className="relative group">
+      {/* Reply indicator that appears behind the bubble */}
+      <div 
+        className="absolute left-0 top-1/2 -translate-y-1/2 flex items-center gap-2 transition-opacity duration-150"
+        style={{ 
+          opacity: replyOpacity,
+          pointerEvents: 'none'
+        }}
+      >
+        <div className="px-3 py-1.5 rounded-full bg-blue-600 text-white text-xs font-medium shadow-lg">
+          Reply
+        </div>
+      </div>
+
+      <div 
+        className="flex justify-start mb-2 animate-fadeIn"
+        style={{
+          transform: swipeTransform,
+          transition: isSwiping ? 'none' : 'transform 200ms ease-out',
+        }}
+      >
+        <div 
+          className="max-w-[85%] sm:max-w-md px-3 py-1.5 rounded-lg shadow-lg bg-gray-800/90 backdrop-blur-xl text-gray-100 border border-gray-700/50"
+          style={{ opacity: bubbleOpacity }}
+        >
 
           {/* Flex container that wraps. 
           Items-end keeps the time aligned with the bottom of the last line.
