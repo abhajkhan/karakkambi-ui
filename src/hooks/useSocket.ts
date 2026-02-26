@@ -1,15 +1,6 @@
 import { useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import type { Message } from '../types/index';
-import { uniqueNamesGenerator, adjectives, animals, colors } from 'unique-names-generator';
-
-function generateRandomUsername() {
-  return uniqueNamesGenerator({
-    dictionaries: [adjectives, colors, animals],
-    separator: '',
-    style: 'capital',
-  });
-}
 
 export const useSocket = (serverUrl: string) => {
 
@@ -59,11 +50,24 @@ export const useSocket = (serverUrl: string) => {
     };
   }, [serverUrl]);
 
-  const sendMessage = (text: string, username = generateRandomUsername()) => {
-    if (socket && text.trim() && connected) {
-      const message = { username, text };
-      socket.emit('send_message', message);
-      console.log('🧭 Sent message:', message);
+  const sendMessage = (text: string, replyTarget?: string): { success: boolean; error?: string } => {
+    if (!socket) {
+      return { success: false, error: 'Socket not initialized' };
+    }
+    if (!connected) {
+      return { success: false, error: 'Not connected to server' };
+    }
+    if (!text.trim()) {
+      return { success: false, error: 'Message cannot be empty' };
+    }
+
+    try {
+      const payload = { text, replyTo: replyTarget };
+      socket.emit('send_message', payload);
+      return { success: true };
+    } catch (error) {
+      console.error('Error sending message:', error);
+      return { success: false, error: 'Failed to send message' };
     }
   };
 

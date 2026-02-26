@@ -3,7 +3,7 @@ import { useSocket } from '../hooks/useSocket';
 import { getDateKey, formatDateForDisplay } from '../utils/timeFormatter';
 import { MessageBubble } from './MessageBubble';
 import { Send, Users, Wifi, WifiOff } from 'lucide-react';
-import type { ResponseMessageItem } from '../types/index'
+import type { Message } from '../types/index'
 import { get_messages } from '../services/messageService';
 import { MAX_MESSAGE_LENGTH, MESSAGE_COOLDOWN } from '../constants';
 
@@ -14,7 +14,8 @@ const FOOTER_HEIGHT = 80;
 
 export const ChatRoom = () => {
   const [inputMessage, setInputMessage] = useState('');
-  const [historicalMessages, setHistoricalMessages] = useState<ResponseMessageItem[]>([]);
+  const [replyTarget, setReplyTarget] = useState<Message | null>(null);
+  const [historicalMessages, setHistoricalMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
@@ -103,8 +104,9 @@ export const ChatRoom = () => {
       return;
     }
 
-    sendMessage(inputMessage);
+    sendMessage(inputMessage, replyTarget?.id);
     setInputMessage('');
+    setReplyTarget(null);
     setValidationError(null);
     lastMessageTimeRef.current = now;
   };
@@ -126,8 +128,14 @@ export const ChatRoom = () => {
     index === self.findIndex((m) => m.id === msg.id)
   );
 
+  // Create message map for quick lookup (moved outside .map() to follow Rules of Hooks)
+  const messageMap = React.useMemo(() => {
+    const map = new Map(uniqueMessages.map(msg => [msg.id, msg]));
+    return map;
+  }, [uniqueMessages]);
+
   // Group messages by date for floating date bubbles
-  const getDateSeparator = (currentMsg: ResponseMessageItem, prevMsg: ResponseMessageItem | undefined): string | null => {
+  const getDateSeparator = (currentMsg: Message, prevMsg: Message | undefined): string | null => {
     if (!prevMsg) {
       // First message ever - always show date
       return formatDateForDisplay(currentMsg.createdAt);
@@ -245,7 +253,10 @@ export const ChatRoom = () => {
           {!isLoading && uniqueMessages.map((msg, index) => {
             const prevMsg = index > 0 ? uniqueMessages[index - 1] : undefined;
             const dateSeparator = getDateSeparator(msg, prevMsg);
-            
+
+            // Get replied message from the map
+            const repliedMessage = msg.replyTo ? messageMap.get(msg.replyTo) : null;
+
             return (
               <React.Fragment key={msg.id}>
                 {dateSeparator && (
@@ -261,6 +272,8 @@ export const ChatRoom = () => {
                     ...msg,
                     createdAt: msg.createdAt
                   }}
+                  onReply={setReplyTarget}
+                  repliedMessage = {repliedMessage}
                 />
               </React.Fragment>
             );
@@ -313,15 +326,83 @@ export const ChatRoom = () => {
       <footer
         className="backdrop-blur-xl bg-gray-900/70 border-t border-gray-700/50 shadow-2xl fixed left-0 right-0 bottom-0 z-50"
         style={{
-          height: `${FOOTER_HEIGHT}px`,
+          // Dynamic height: expands when there's a reply target
+          height: replyTarget ? 'auto' : `${FOOTER_HEIGHT}px`,
+          minHeight: `${FOOTER_HEIGHT}px`,
           display: 'flex',
-          alignItems: 'center',
+          alignItems: 'flex-start',
           boxSizing: 'border-box',
+          paddingTop: '12px',
           paddingLeft: 'env(safe-area-inset-left)',
           paddingRight: 'env(safe-area-inset-right)',
+          paddingBottom: '12px',
         }}
       >
         <div className="max-w-4xl w-full mx-auto px-4 sm:px-6 box-border">
+          {/* Reply Preview Section */}
+          <div 
+            className={`overflow-hidden transition-all duration-300 ease-out ${
+              replyTarget ? 'max-h-20 opacity-100 mb-2' : 'max-h-0 opacity-0'
+            }`}
+          >
+            {replyTarget && (
+              <div className="flex items-start gap-3 px-4 py-3 bg-gradient-to-r from-gray-800/95 to-gray-800/80 backdrop-blur-xl rounded-xl border border-blue-500/30 shadow-lg shadow-blue-500/10 animate-fadeIn">
+                {/* Reply Indicator Bar */}
+                <div className="flex flex-col items-center gap-1 pt-0.5">
+                  <div className="w-0.5 h-full min-h-[20px] bg-gradient-to-b from-blue-500 to-blue-400 rounded-full" />
+                </div>
+                
+                {/* Reply Icon */}
+                <div className="flex-shrink-0 mt-0.5">
+                  <svg 
+                    className="w-4 h-4 text-blue-400" 
+                    fill="none" 
+                    viewBox="0 0 24 24" 
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path 
+                      strokeLinecap="round" 
+                      strokeLinejoin="round" 
+                      d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" 
+                    />
+                  </svg>
+                </div>
+                
+                {/* Reply Content */}
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-blue-400 font-medium mb-0.5">
+                    Replying to
+                  </p>
+                  <p className="text-sm text-gray-300 truncate">
+                    {replyTarget.text}
+                  </p>
+                </div>
+                
+                {/* Cancel Reply Button */}
+                <button
+                  onClick={() => setReplyTarget(null)}
+                  className="flex-shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-700/50 transition-all active:scale-90"
+                >
+                  <svg 
+                    className="w-4 h-4" 
+                    fill="none" 
+                    viewBox="0 0 24 24" 
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path 
+                      strokeLinecap="round" 
+                      strokeLinejoin="round" 
+                      d="M6 18L18 6M6 6l12 12" 
+                    />
+                  </svg>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Input Field */}
           <form onSubmit={handleSubmit} className="flex gap-2 sm:gap-3 items-center min-w-0">
             <input
               type="text"
