@@ -50,10 +50,24 @@ export const useSocket = (serverUrl: string) => {
     };
   }, [serverUrl]);
 
-  const sendMessage = (text: string, replyTarget?: string) => {
-    if (socket && text.trim() && connected) {
+  const sendMessage = (text: string, replyTarget?: string): { success: boolean; error?: string } => {
+    if (!socket) {
+      return { success: false, error: 'Socket not initialized' };
+    }
+    if (!connected) {
+      return { success: false, error: 'Not connected to server' };
+    }
+    if (!text.trim()) {
+      return { success: false, error: 'Message cannot be empty' };
+    }
+
+    try {
       const payload = { text, replyTo: replyTarget };
       socket.emit('send_message', payload);
+      return { success: true };
+    } catch (error) {
+      console.error('Error sending message:', error);
+      return { success: false, error: 'Failed to send message' };
     }
   };
 
