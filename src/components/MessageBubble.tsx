@@ -69,11 +69,11 @@ export const MessageBubble = ({ message, onReply, repliedMessage }: Props) => {
           {/* Flex container that wraps. 
           Items-end keeps the time aligned with the bottom of the last line.
       */}
-          <div className="flex flex-wrap items-end justify-end gap-x-4">
+          <div className="flex flex-wrap items-end gap-x-4">
 
             {/* Message Text: flex-grow ensures it takes up space, 
             but allows the timestamp to sit next to it. */}
-            <div className="text-[14px] leading-relaxed break-words flex-grow">
+            <div className="text-[14px] leading-relaxed break-words flex-grow min-w-0">
               {repliedMessage && (
                 <div className="text-xs text-gray-400 border-l-2 border-blue-500 pl-2 mb-1">
                   {repliedMessage.text}
