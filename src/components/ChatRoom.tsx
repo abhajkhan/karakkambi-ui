@@ -128,6 +128,12 @@ export const ChatRoom = () => {
     index === self.findIndex((m) => m.id === msg.id)
   );
 
+  // Create message map for quick lookup (moved outside .map() to follow Rules of Hooks)
+  const messageMap = React.useMemo(() => {
+    const map = new Map(uniqueMessages.map(msg => [msg.id, msg]));
+    return map;
+  }, [uniqueMessages]);
+
   // Group messages by date for floating date bubbles
   const getDateSeparator = (currentMsg: Message, prevMsg: Message | undefined): string | null => {
     if (!prevMsg) {
@@ -248,10 +254,8 @@ export const ChatRoom = () => {
             const prevMsg = index > 0 ? uniqueMessages[index - 1] : undefined;
             const dateSeparator = getDateSeparator(msg, prevMsg);
 
-            console.log('Rendering message:', msg,"\n Messages List: ", uniqueMessages);
-            const repliedMessage = msg.replyTo
-            ? uniqueMessages.find(m => m.id === msg.replyTo)
-            : null;
+            // Get replied message from the map
+            const repliedMessage = msg.replyTo ? messageMap.get(msg.replyTo) : null;
 
             return (
               <React.Fragment key={msg.id}>
