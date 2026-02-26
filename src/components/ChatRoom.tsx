@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useSocket } from '../hooks/useSocket';
-import { formatTimestamp } from '../utils/timeFormatter';
+import { getDateKey, formatDateForDisplay } from '../utils/timeFormatter';
 import { MessageBubble } from './MessageBubble';
 import { Send, Users, Wifi, WifiOff } from 'lucide-react';
 import type { ResponseMessageItem } from '../types/index'
@@ -10,7 +10,7 @@ import { MAX_MESSAGE_LENGTH, MESSAGE_COOLDOWN } from '../constants';
 const SOCKET_SERVER_URL = import.meta.env.VITE_SOCKET_URL;
 
 const HEADER_HEIGHT = 64;
-const FOOTER_HEIGHT = 94;
+const FOOTER_HEIGHT = 80;
 
 export const ChatRoom = () => {
   const [inputMessage, setInputMessage] = useState('');
@@ -126,6 +126,24 @@ export const ChatRoom = () => {
     index === self.findIndex((m) => m.id === msg.id)
   );
 
+  // Group messages by date for floating date bubbles
+  const getDateSeparator = (currentMsg: ResponseMessageItem, prevMsg: ResponseMessageItem | undefined): string | null => {
+    if (!prevMsg) {
+      // First message ever - always show date
+      return formatDateForDisplay(currentMsg.createdAt);
+    }
+
+    const currentDateKey = getDateKey(currentMsg.createdAt);
+    const prevDateKey = getDateKey(prevMsg.createdAt);
+
+    // If dates are different, show date bubble
+    if (currentDateKey !== prevDateKey) {
+      return formatDateForDisplay(currentMsg.createdAt);
+    }
+
+    return null;
+  };
+
   return (
     <div
       className="relative w-full h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 overflow-hidden"
@@ -224,16 +242,29 @@ export const ChatRoom = () => {
               No messages yet. Say hello.
             </div>
           )}
-          {!isLoading && uniqueMessages.map((msg) => (
-            <MessageBubble
-              key={msg.id}
-              message={{
-                ...msg,
-                createdAt: formatTimestamp(msg.createdAt)
-              }}
-              isOwn={msg.username === 'You'}
-            />
-          ))}
+          {!isLoading && uniqueMessages.map((msg, index) => {
+            const prevMsg = index > 0 ? uniqueMessages[index - 1] : undefined;
+            const dateSeparator = getDateSeparator(msg, prevMsg);
+            
+            return (
+              <React.Fragment key={msg.id}>
+                {dateSeparator && (
+                  <div className="flex justify-center my-4">
+                    <div className="px-3 py-1 rounded-full bg-gray-700/60 backdrop-blur-xl text-xs text-gray-300 border border-gray-600/40 shadow-lg">
+                      {dateSeparator}
+                    </div>
+                  </div>
+                )}
+                <MessageBubble
+                  key={msg.id}
+                  message={{
+                    ...msg,
+                    createdAt: msg.createdAt
+                  }}
+                />
+              </React.Fragment>
+            );
+          })}
           <div ref={messagesEndRef} />
         </div>
         {showScrollToBottom && (
@@ -317,19 +348,12 @@ export const ChatRoom = () => {
           </form>
 
           {/* Validation Feedback */}
-          <div className="flex justify-between items-center mt-2 px-2">
-            <span className="text-xs text-red-400 min-h-[1.25rem]">
+          {validationError && (
+            <p className="mt-2 text-sm text-red-400 flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
               {validationError}
-            </span>
-            <span className={`text-xs font-medium transition-colors ${inputMessage.length > MAX_MESSAGE_LENGTH
-              ? 'text-red-400'
-              : inputMessage.length > MAX_MESSAGE_LENGTH * 0.9
-                ? 'text-yellow-400'
-                : 'text-gray-500'
-              }`}>
-              {inputMessage.length} / {MAX_MESSAGE_LENGTH}
-            </span>
-          </div>
+            </p>
+          )}
         </div>
       </footer>
 
