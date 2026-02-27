@@ -1,6 +1,23 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import type { Message } from '../types/index';
+
+const APP_NAME = 'കരക്കമ്പി';
+
+const requestNotificationPermission = async () => {
+  if (!('Notification' in window)) return;
+  if (Notification.permission === 'default') {
+    await Notification.requestPermission();
+  }
+};
+
+const showBrowserNotification = (message: Message) => {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+
+  new Notification(APP_NAME, {
+    body: message.text,
+  });
+};
 
 export const useSocket = (serverUrl: string) => {
 
@@ -8,6 +25,25 @@ export const useSocket = (serverUrl: string) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [onlineUsers, setOnlineUsers] = useState<number>(0);
   const [connected, setConnected] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const unreadCountRef = useRef(0);
+
+  // Request notification permission once on mount
+  useEffect(() => {
+    requestNotificationPermission();
+  }, []);
+
+  // Reset unread count when tab becomes visible
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        unreadCountRef.current = 0;
+        setUnreadCount(0);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
 
   useEffect(() => {
     // Connect to external Socket.io server
@@ -28,7 +64,12 @@ export const useSocket = (serverUrl: string) => {
 
     socketIo.on('new_message', (message: Message) => {
       setMessages(prev => [...prev, message]);
-      console.log(message)
+      console.log(message);
+      if (document.visibilityState !== 'visible') {
+        showBrowserNotification(message);
+        unreadCountRef.current += 1;
+        setUnreadCount(unreadCountRef.current);
+      }
     });
 
     socketIo.on('user_joined', () => {
@@ -71,5 +112,10 @@ export const useSocket = (serverUrl: string) => {
     }
   };
 
-  return { socket, messages, sendMessage, onlineUsers, connected };
+  const resetUnreadCount = () => {
+    unreadCountRef.current = 0;
+    setUnreadCount(0);
+  };
+
+  return { socket, messages, sendMessage, onlineUsers, connected, unreadCount, resetUnreadCount };
 };

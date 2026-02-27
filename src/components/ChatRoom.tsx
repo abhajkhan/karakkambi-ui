@@ -19,7 +19,7 @@ export const ChatRoom = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
-  const { messages: socketMessages, sendMessage, onlineUsers, connected } = useSocket(SOCKET_SERVER_URL);
+  const { messages: socketMessages, sendMessage, onlineUsers, connected, unreadCount, resetUnreadCount } = useSocket(SOCKET_SERVER_URL);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isInitialLoadRef = useRef(true);
@@ -74,6 +74,9 @@ export const ChatRoom = () => {
     const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
 
     setShowScrollToBottom(distanceFromBottom > threshold);
+    if (distanceFromBottom <= threshold) {
+      resetUnreadCount();
+    }
   };
 
   // Auto-scroll to bottom when new socket messages arrive or on initial load
@@ -87,6 +90,15 @@ export const ChatRoom = () => {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [socketMessages, isLoading, historicalMessages.length]);
+
+  // Update document title to reflect unread message count
+  useEffect(() => {
+    if (unreadCount > 0) {
+      document.title = `(${unreadCount}) കരക്കമ്പി 💬`;
+    } else {
+      document.title = 'കരക്കമ്പി 💬';
+    }
+  }, [unreadCount]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -287,12 +299,14 @@ export const ChatRoom = () => {
               if (container) {
                 container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
               }
+              resetUnreadCount();
             }}
             className="
               fixed 
               bottom-[100px] 
               right-4 
               z-50
+              relative
               flex 
               items-center 
               justify-center 
@@ -307,6 +321,14 @@ export const ChatRoom = () => {
             "
             aria-label="Scroll to bottom"
           >
+            {unreadCount > 0 && (
+              <span
+                aria-label={`${unreadCount} unread message${unreadCount === 1 ? '' : 's'}`}
+                className="absolute -top-1 -right-1 flex items-center justify-center w-5 h-5 text-[10px] font-bold bg-red-500 text-white rounded-full shadow"
+              >
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
             <svg
               xmlns='http://www.w3.org/2000/svg'
               fill='none'
