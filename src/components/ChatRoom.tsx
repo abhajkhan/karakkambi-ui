@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useSocket } from '../hooks/useSocket';
 import { getDateKey, formatDateForDisplay } from '../utils/timeFormatter';
 import { MessageBubble } from './MessageBubble';
-import { Send, Users, Wifi, WifiOff } from 'lucide-react';
+import { VoiceRecorder } from './VoiceRecorder';
+import { Send, Users, Wifi, WifiOff, Mic } from 'lucide-react';
 import type { Message } from '../types/index'
 import { get_messages } from '../services/messageService';
 import { MAX_MESSAGE_LENGTH, MESSAGE_COOLDOWN } from '../constants';
@@ -19,7 +20,8 @@ export const ChatRoom = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
-  const { messages: socketMessages, sendMessage, onlineUsers, connected } = useSocket(SOCKET_SERVER_URL);
+  const [isVoiceRecording, setIsVoiceRecording] = useState(false);
+  const { messages: socketMessages, sendMessage, sendVoiceMessage, onlineUsers, connected } = useSocket(SOCKET_SERVER_URL);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isInitialLoadRef = useRef(true);
@@ -116,6 +118,28 @@ export const ChatRoom = () => {
       e.preventDefault();
       handleSubmit(e);
     }
+  };
+
+  // Handle voice message
+  const handleVoiceMessage = (voiceUrl: string, duration: number, size: number, replyTo?: string) => {
+    const result = sendVoiceMessage(voiceUrl, duration, size, replyTo);
+    if (!result.success) {
+      setValidationError(result.error || 'Failed to send voice message');
+    } else {
+      setReplyTarget(null);
+      setValidationError(null);
+      lastMessageTimeRef.current = Date.now();
+    }
+  };
+
+  // Toggle voice recording mode
+  const toggleVoiceRecording = () => {
+    setIsVoiceRecording(!isVoiceRecording);
+  };
+
+  // Cancel voice recording
+  const cancelVoiceRecording = () => {
+    setIsVoiceRecording(false);
   };
 
   // Combine and sort all messages
@@ -402,31 +426,51 @@ export const ChatRoom = () => {
             )}
           </div>
 
-          {/* Input Field */}
-          <form onSubmit={handleSubmit} className="flex gap-2 sm:gap-3 items-center min-w-0">
-            <input
-              type="text"
-              value={inputMessage}
-              onChange={(e) => {
-                setInputMessage(e.target.value);
-                if (validationError) setValidationError(null);
-              }}
-              onKeyPress={handleKeyPress}
-              placeholder="Type your message..."
-              disabled={!connected || isLoading}
-              className={`flex-1 min-w-0 px-4 py-2.5 bg-gray-800/90 backdrop-blur-xl text-gray-100 placeholder-gray-500 rounded-2xl border focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg text-[15px] ${inputMessage.length > MAX_MESSAGE_LENGTH ? 'border-red-500/50' : 'border-gray-700/50'
-                }`}
-              autoComplete="off"
+          {/* Input Field or Voice Recorder */}
+          {!isVoiceRecording ? (
+            <form onSubmit={handleSubmit} className="flex gap-2 sm:gap-3 items-center min-w-0">
+              <input
+                type="text"
+                value={inputMessage}
+                onChange={(e) => {
+                  setInputMessage(e.target.value);
+                  if (validationError) setValidationError(null);
+                }}
+                onKeyPress={handleKeyPress}
+                placeholder="Type your message..."
+                disabled={!connected || isLoading}
+                className={`flex-1 min-w-0 px-4 py-2.5 bg-gray-800/90 backdrop-blur-xl text-gray-100 placeholder-gray-500 rounded-2xl border focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg text-[15px] ${inputMessage.length > MAX_MESSAGE_LENGTH ? 'border-red-500/50' : 'border-gray-700/50'
+                  }`}
+                autoComplete="off"
+              />
+              
+              {/* Microphone Button */}
+              <button
+                type="button"
+                onClick={toggleVoiceRecording}
+                disabled={!connected || isLoading}
+                className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-600 hover:bg-gray-500 text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Mic className="w-4 h-4" />
+              </button>
+              
+              <button
+                type="submit"
+                disabled={!connected || !inputMessage.trim() || isLoading}
+                className="flex items-center justify-center gap-2 font-medium flex-shrink-0 px-3 sm:px-6 py-3 bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-2xl hover:from-blue-500 hover:to-blue-600 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-500/20 disabled:shadow-none"
+              >
+                <Send className="w-4 h-4" />
+                <span className="hidden sm:inline text-sm">Send</span>
+              </button>
+            </form>
+          ) : (
+            /* Voice Recorder */
+            <VoiceRecorder
+              onVoiceMessage={handleVoiceMessage}
+              replyTo={replyTarget?.id || undefined}
+              onCancel={cancelVoiceRecording}
             />
-            <button
-              type="submit"
-              disabled={!connected || !inputMessage.trim() || isLoading}
-              className="flex items-center justify-center gap-2 font-medium flex-shrink-0 px-3 sm:px-6 py-3 bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-2xl hover:from-blue-500 hover:to-blue-600 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-500/20 disabled:shadow-none"
-            >
-              <Send className="w-4 h-4" />
-              <span className="hidden sm:inline text-sm">Send</span>
-            </button>
-          </form>
+          )}
 
           {/* Validation Feedback */}
           {validationError && (

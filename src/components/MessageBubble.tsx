@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import type { Message } from '../types';
 import { formatTimeOnly } from '../utils/timeFormatter';
 import { useSwipeable } from "react-swipeable";
+import { Play, Pause, Volume2 } from 'lucide-react';
 
 interface Props {
   message: Message;
@@ -12,6 +13,53 @@ interface Props {
 export const MessageBubble = ({ message, onReply, repliedMessage }: Props) => {
   const [swipeProgress, setSwipeProgress] = useState(0);
   const [isSwiping, setIsSwiping] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  // Handle audio playback
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !message.voiceUrl) return;
+
+    const updateTime = () => setCurrentTime(audio.currentTime);
+    const updateDuration = () => setDuration(audio.duration);
+    const handleEnded = () => {
+      setIsPlaying(false);
+      setCurrentTime(0);
+    };
+
+    audio.addEventListener('timeupdate', updateTime);
+    audio.addEventListener('loadedmetadata', updateDuration);
+    audio.addEventListener('ended', handleEnded);
+
+    return () => {
+      audio.removeEventListener('timeupdate', updateTime);
+      audio.removeEventListener('loadedmetadata', updateDuration);
+      audio.removeEventListener('ended', handleEnded);
+    };
+  }, [message.voiceUrl]);
+
+  const togglePlayPause = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    if (isPlaying) {
+      audio.pause();
+      setIsPlaying(false);
+    } else {
+      audio.play();
+      setIsPlaying(true);
+    }
+  };
+
+  const formatAudioTime = (time: number): string => {
+    if (isNaN(time)) return '0:00';
+    const mins = Math.floor(time / 60);
+    const secs = Math.floor(time % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   const handlers = useSwipeable({
     onSwipeStart: () => setIsSwiping(true),
@@ -71,8 +119,7 @@ export const MessageBubble = ({ message, onReply, repliedMessage }: Props) => {
       */}
           <div className="flex flex-wrap items-end gap-x-4">
 
-            {/* Message Text: flex-grow ensures it takes up space, 
-            but allows the timestamp to sit next to it. */}
+            {/* Message Content: text or voice */}
             <div className="text-[14px] leading-relaxed break-words flex-grow min-w-0">
               {repliedMessage && (
                 <div className="text-xs text-gray-400 border-l-2 border-blue-500 pl-2 mb-1">
@@ -84,7 +131,51 @@ export const MessageBubble = ({ message, onReply, repliedMessage }: Props) => {
                   (Replied to a message that may have been deleted)
                 </div>
               )}
-              {message.text}
+              
+              {/* Voice Message Player */}
+              {message.voiceUrl ? (
+                <div className="flex items-center gap-3 bg-gray-700/50 rounded-lg p-3">
+                  {/* Hidden audio element */}
+                  <audio
+                    ref={audioRef}
+                    src={message.voiceUrl}
+                    preload="metadata"
+                  />
+                  
+                  {/* Play/Pause Button */}
+                  <button
+                    onClick={togglePlayPause}
+                    className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-500 text-white transition-colors"
+                  >
+                    {isPlaying ? (
+                      <Pause className="w-4 h-4" />
+                    ) : (
+                      <Play className="w-4 h-4" />
+                    )}
+                  </button>
+                  
+                  {/* Voice Icon and Duration */}
+                  <div className="flex items-center gap-2">
+                    <Volume2 className="w-4 h-4 text-gray-400" />
+                    <span className="text-xs text-gray-300">
+                      {formatAudioTime(currentTime)} / {formatAudioTime(duration)}
+                    </span>
+                  </div>
+                  
+                  {/* Progress Bar */}
+                  <div className="flex-1 h-1 bg-gray-600 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-blue-500 transition-all duration-100"
+                      style={{ 
+                        width: duration > 0 ? `${(currentTime / duration) * 100}%` : '0%' 
+                      }}
+                    />
+                  </div>
+                </div>
+              ) : (
+                /* Text Message */
+                message.text
+              )}
             </div>
 
             {/* Timestamp: shows only time (e.g., "3:45 PM") */}

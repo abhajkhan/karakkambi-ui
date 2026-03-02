@@ -71,5 +71,31 @@ export const useSocket = (serverUrl: string) => {
     }
   };
 
-  return { socket, messages, sendMessage, onlineUsers, connected };
+  const sendVoiceMessage = (voiceUrl: string, duration: number, size: number, replyTarget?: string): { success: boolean; error?: string } => {
+    if (!socket) {
+      return { success: false, error: 'Socket not initialized' };
+    }
+    if (!connected) {
+      return { success: false, error: 'Not connected to server' };
+    }
+    if (!voiceUrl.trim()) {
+      return { success: false, error: 'Voice URL cannot be empty' };
+    }
+
+    try {
+      const payload = { 
+        voiceUrl, 
+        voiceDuration: duration, 
+        voiceSize: size,
+        replyTo: replyTarget 
+      };
+      socket.emit('send_message', payload);
+      return { success: true };
+    } catch (error) {
+      console.error('Error sending voice message:', error);
+      return { success: false, error: 'Failed to send voice message' };
+    }
+  };
+
+  return { socket, messages, sendMessage, sendVoiceMessage, onlineUsers, connected };
 };
