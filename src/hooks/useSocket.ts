@@ -12,8 +12,11 @@ export const useSocket = (serverUrl: string) => {
   useEffect(() => {
     // Connect to external Socket.io server
     const socketIo = io(serverUrl, {
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'], // Try polling first
       reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      timeout: 20000,
     });
 
     socketIo.on('connect', () => {
@@ -23,6 +26,11 @@ export const useSocket = (serverUrl: string) => {
 
     socketIo.on('disconnect', () => {
       console.log('Disconnected from server');
+      setConnected(false);
+    });
+
+    socketIo.on('connect_error', (error) => {
+      console.error('Connection error:', error);
       setConnected(false);
     });
 
@@ -83,11 +91,11 @@ export const useSocket = (serverUrl: string) => {
     }
 
     try {
-      const payload = { 
-        voiceUrl, 
-        voiceDuration: duration, 
+      const payload = {
+        voiceUrl,
+        voiceDuration: duration,
         voiceSize: size,
-        replyTo: replyTarget 
+        replyTo: replyTarget
       };
       socket.emit('send_message', payload);
       return { success: true };

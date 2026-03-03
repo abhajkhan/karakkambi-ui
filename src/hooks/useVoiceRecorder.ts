@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from 'react';
 
 interface VoiceRecordingState {
   isRecording: boolean;
+  isPaused: boolean;
   duration: number;
   audioBlob: Blob | null;
   isUploading: boolean;
@@ -13,14 +14,17 @@ interface UseVoiceRecorderReturn {
   state: VoiceRecordingState;
   startRecording: () => Promise<void>;
   stopRecording: () => Promise<Blob>;
+  pauseRecording: () => void;
+  resumeRecording: () => void;
   cancelRecording: () => void;
-  uploadRecording: (replyTo?: string) => Promise<string | null>;
+  uploadRecording: (blob?: Blob, replyTo?: string) => Promise<string | null>;
   reset: () => void;
 }
 
 export const useVoiceRecorder = (onVoiceMessage?: (voiceUrl: string, duration: number, size: number, replyTo?: string) => void): UseVoiceRecorderReturn => {
   const [state, setState] = useState<VoiceRecordingState>({
     isRecording: false,
+    isPaused: false,
     duration: 0,
     audioBlob: null,
     isUploading: false,
@@ -30,15 +34,59 @@ export const useVoiceRecorder = (onVoiceMessage?: (voiceUrl: string, duration: n
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const chunksRef = useRef<BlobPart[]>([]);
   const startTimeRef = useRef<number>(0);
+  const pausedDurationRef = useRef<number>(0); // accumulated time before pauses
   const durationIntervalRef = useRef<number | null>(null);
 
-  // Update duration while recording
-  const updateDuration = useCallback(() => {
-    if (startTimeRef.current) {
-      const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
-      setState(prev => ({ ...prev, duration: elapsed }));
+  // Get supported MIME type
+  const getSupportedMimeType = (): string => {
+    const types = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4',
+      'audio/ogg;codecs=opus',
+      'audio/ogg'
+    ];
+
+    for (const type of types) {
+      if (MediaRecorder.isTypeSupported(type)) {
+        return type;
+      }
     }
+
+    return 'audio/webm'; // fallback
+  };
+
+  // Start the duration timer
+  const startDurationTimer = useCallback(() => {
+    if (durationIntervalRef.current) {
+      clearInterval(durationIntervalRef.current);
+    }
+    durationIntervalRef.current = setInterval(() => {
+      if (startTimeRef.current) {
+        const elapsed = pausedDurationRef.current + Math.floor((Date.now() - startTimeRef.current) / 1000);
+        setState(prev => ({ ...prev, duration: elapsed }));
+      }
+    }, 1000);
+  }, []);
+
+  // Cleanup function
+  const cleanup = useCallback(() => {
+    if (durationIntervalRef.current) {
+      clearInterval(durationIntervalRef.current);
+      durationIntervalRef.current = null;
+    }
+
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+
+    mediaRecorderRef.current = null;
+    startTimeRef.current = 0;
+    pausedDurationRef.current = 0;
+    chunksRef.current = [];
   }, []);
 
   // Start recording
@@ -65,16 +113,48 @@ export const useVoiceRecorder = (onVoiceMessage?: (voiceUrl: string, duration: n
       });
 
       mediaRecorderRef.current = mediaRecorder;
+      chunksRef.current = [];
       startTimeRef.current = Date.now();
+      pausedDurationRef.current = 0;
+
+      // Set up data available handler
+      mediaRecorder.ondataavailable = (event: BlobEvent) => {
+        if (event.data.size > 0) {
+          chunksRef.current.push(event.data);
+        }
+      };
+
+      // Set up event listeners for recording
+      mediaRecorder.onstart = () => {
+        setState(prev => ({ ...prev, isRecording: true, isPaused: false }));
+      };
+
+      mediaRecorder.onerror = (event) => {
+        console.error('MediaRecorder error:', event);
+        setState(prev => ({
+          ...prev,
+          error: 'Recording error occurred',
+          isRecording: false,
+          isPaused: false
+        }));
+      };
 
       // Start recording
       mediaRecorder.start();
 
+      // Wait a bit for the recorder to actually start
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      if (mediaRecorder.state !== 'recording') {
+        throw new Error(`Failed to start recording. State: ${mediaRecorder.state}`);
+      }
+
       // Update duration every second
-      durationIntervalRef.current = setInterval(updateDuration, 1000);
+      startDurationTimer();
 
       setState({
         isRecording: true,
+        isPaused: false,
         duration: 0,
         audioBlob: null,
         isUploading: false,
@@ -86,58 +166,137 @@ export const useVoiceRecorder = (onVoiceMessage?: (voiceUrl: string, duration: n
       console.error('Error starting recording:', error);
       setState(prev => ({
         ...prev,
-        error: error instanceof Error ? error.message : 'Failed to access microphone'
+        error: error instanceof Error ? error.message : 'Failed to access microphone',
+        isRecording: false,
+        isPaused: false
       }));
     }
-  }, [updateDuration]);
+  }, [startDurationTimer]);
 
-  // Stop recording
+  // Pause recording
+  const pauseRecording = useCallback(() => {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state !== 'recording') return;
+
+    recorder.pause();
+
+    // Accumulate elapsed time before pausing
+    pausedDurationRef.current += Math.floor((Date.now() - startTimeRef.current) / 1000);
+    startTimeRef.current = 0;
+
+    // Stop the timer
+    if (durationIntervalRef.current) {
+      clearInterval(durationIntervalRef.current);
+      durationIntervalRef.current = null;
+    }
+
+    setState(prev => ({ ...prev, isPaused: true }));
+  }, []);
+
+  // Resume recording
+  const resumeRecording = useCallback(() => {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state !== 'paused') return;
+
+    recorder.resume();
+    startTimeRef.current = Date.now();
+
+    // Restart the timer
+    startDurationTimer();
+
+    setState(prev => ({ ...prev, isPaused: false }));
+  }, [startDurationTimer]);
+
+  // Stop recording – returns the blob directly
   const stopRecording = useCallback((): Promise<Blob> => {
     return new Promise((resolve, reject) => {
-      if (!mediaRecorderRef.current) {
+      const recorder = mediaRecorderRef.current;
+
+      if (!recorder || (recorder.state !== 'recording' && recorder.state !== 'paused')) {
         reject(new Error('No active recording'));
         return;
       }
 
-      const chunks: BlobPart[] = [];
-      
-      mediaRecorderRef.current.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          chunks.push(event.data);
+      // Set up the stop handler to resolve the promise
+      recorder.onstop = () => {
+        if (chunksRef.current.length === 0) {
+          reject(new Error('No audio data recorded'));
+          return;
         }
+
+        const blob = new Blob(chunksRef.current, {
+          type: recorder.mimeType
+        });
+
+        // Calculate final duration
+        let finalDuration = pausedDurationRef.current;
+        if (startTimeRef.current) {
+          finalDuration += Math.floor((Date.now() - startTimeRef.current) / 1000);
+        }
+
+        setState(prev => ({
+          ...prev,
+          audioBlob: blob,
+          isRecording: false,
+          isPaused: false,
+          duration: finalDuration
+        }));
+
+        // Stop duration timer and stream, but keep refs for upload
+        if (durationIntervalRef.current) {
+          clearInterval(durationIntervalRef.current);
+          durationIntervalRef.current = null;
+        }
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(track => track.stop());
+          streamRef.current = null;
+        }
+
+        resolve(blob);
       };
 
-      mediaRecorderRef.current.onstop = () => {
-        const blob = new Blob(chunks, { type: mediaRecorderRef.current!.mimeType });
-        setState(prev => ({ ...prev, audioBlob: blob }));
-        resolve(blob);
+      // Set up error handler
+      recorder.onerror = (event) => {
+        console.error('Recorder error during stop:', event);
+        reject(new Error('Recording error during stop'));
         cleanup();
       };
 
       // Stop the recorder
-      mediaRecorderRef.current.stop();
+      try {
+        recorder.stop();
+      } catch (error) {
+        console.error('Error stopping recorder:', error);
+        reject(error);
+        cleanup();
+      }
     });
-  }, []);
+  }, [cleanup]);
 
   // Cancel recording
   const cancelRecording = useCallback(() => {
-    if (mediaRecorderRef.current && state.isRecording) {
-      mediaRecorderRef.current.stop();
+    const recorder = mediaRecorderRef.current;
+    if (recorder && (recorder.state === 'recording' || recorder.state === 'paused')) {
+      recorder.stop();
     }
     cleanup();
     setState({
       isRecording: false,
+      isPaused: false,
       duration: 0,
       audioBlob: null,
       isUploading: false,
       uploadProgress: 0,
       error: null
     });
-  }, [state.isRecording]);
+  }, [cleanup]);
 
   // Upload recording to Cloudinary
-  const uploadRecording = useCallback(async (replyTo?: string): Promise<string | null> => {
-    if (!state.audioBlob) {
+  // Accepts an optional blob parameter to avoid stale closure issues
+  const uploadRecording = useCallback(async (blob?: Blob, replyTo?: string): Promise<string | null> => {
+    const audioBlob = blob || state.audioBlob;
+
+    if (!audioBlob) {
       setState(prev => ({ ...prev, error: 'No audio to upload' }));
       return null;
     }
@@ -150,7 +309,7 @@ export const useVoiceRecorder = (onVoiceMessage?: (voiceUrl: string, duration: n
       const timestamp = Math.floor(Date.now() / 1000);
 
       // Get upload signature from backend
-      const signatureResponse = await fetch('/api/upload/signature', {
+      const signatureResponse = await fetch('http://localhost:5000/api/upload/signature', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -166,17 +325,11 @@ export const useVoiceRecorder = (onVoiceMessage?: (voiceUrl: string, duration: n
 
       // Create FormData for Cloudinary upload
       const formData = new FormData();
-      formData.append('file', state.audioBlob);
+      formData.append('file', audioBlob);
       formData.append('api_key', signatureData.api_key);
       formData.append('timestamp', signatureData.timestamp.toString());
       formData.append('signature', signatureData.signature);
       formData.append('public_id', signatureData.public_id);
-      formData.append('resource_type', 'video');
-      formData.append('format', 'auto');
-      formData.append('quality', 'low');
-      formData.append('bit_rate', '32000');
-      formData.append('audio_codec', 'opus');
-      formData.append('auto_delete_days', '7');
       formData.append('folder', 'voice_messages');
 
       // Upload to Cloudinary
@@ -194,7 +347,7 @@ export const useVoiceRecorder = (onVoiceMessage?: (voiceUrl: string, duration: n
 
       // Calculate duration and size
       const duration = state.duration;
-      const size = state.audioBlob.size;
+      const size = audioBlob.size;
 
       // Send voice message via callback
       if (onVoiceMessage) {
@@ -227,53 +380,21 @@ export const useVoiceRecorder = (onVoiceMessage?: (voiceUrl: string, duration: n
     cleanup();
     setState({
       isRecording: false,
+      isPaused: false,
       duration: 0,
       audioBlob: null,
       isUploading: false,
       uploadProgress: 0,
       error: null
     });
-  }, []);
-
-  // Cleanup function
-  const cleanup = () => {
-    if (durationIntervalRef.current) {
-      clearInterval(durationIntervalRef.current);
-      durationIntervalRef.current = null;
-    }
-
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-
-    mediaRecorderRef.current = null;
-    startTimeRef.current = 0;
-  };
-
-  // Get supported MIME type
-  const getSupportedMimeType = (): string => {
-    const types = [
-      'audio/webm;codecs=opus',
-      'audio/webm',
-      'audio/mp4',
-      'audio/ogg;codecs=opus',
-      'audio/ogg'
-    ];
-
-    for (const type of types) {
-      if (MediaRecorder.isTypeSupported(type)) {
-        return type;
-      }
-    }
-
-    return 'audio/webm'; // fallback
-  };
+  }, [cleanup]);
 
   return {
     state,
     startRecording,
     stopRecording,
+    pauseRecording,
+    resumeRecording,
     cancelRecording,
     uploadRecording,
     reset

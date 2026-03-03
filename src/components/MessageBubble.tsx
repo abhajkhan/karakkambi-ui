@@ -3,6 +3,7 @@ import type { Message } from '../types';
 import { formatTimeOnly } from '../utils/timeFormatter';
 import { useSwipeable } from "react-swipeable";
 import { Play, Pause, Volume2 } from 'lucide-react';
+import { audioManager } from '../utils/audioManager';
 
 interface Props {
   message: Message;
@@ -28,6 +29,7 @@ export const MessageBubble = ({ message, onReply, repliedMessage }: Props) => {
     const handleEnded = () => {
       setIsPlaying(false);
       setCurrentTime(0);
+      audioManager.release(audio);
     };
 
     audio.addEventListener('timeupdate', updateTime);
@@ -38,6 +40,7 @@ export const MessageBubble = ({ message, onReply, repliedMessage }: Props) => {
       audio.removeEventListener('timeupdate', updateTime);
       audio.removeEventListener('loadedmetadata', updateDuration);
       audio.removeEventListener('ended', handleEnded);
+      audioManager.release(audio);
     };
   }, [message.voiceUrl]);
 
@@ -48,7 +51,15 @@ export const MessageBubble = ({ message, onReply, repliedMessage }: Props) => {
     if (isPlaying) {
       audio.pause();
       setIsPlaying(false);
+      audioManager.release(audio);
     } else {
+      // Stop any other playing audio first
+      audioManager.requestPlay(audio, () => {
+        // Called if this audio is pre-empted by another
+        audio.pause();
+        audio.currentTime = 0;
+        setIsPlaying(false);
+      });
       audio.play();
       setIsPlaying(true);
     }
@@ -90,9 +101,9 @@ export const MessageBubble = ({ message, onReply, repliedMessage }: Props) => {
   return (
     <div {...handlers} className="relative group">
       {/* Reply indicator that appears behind the bubble */}
-      <div 
+      <div
         className="absolute left-0 top-1/2 -translate-y-1/2 flex items-center gap-2 transition-opacity duration-150"
-        style={{ 
+        style={{
           opacity: replyOpacity,
           pointerEvents: 'none'
         }}
@@ -102,14 +113,14 @@ export const MessageBubble = ({ message, onReply, repliedMessage }: Props) => {
         </div>
       </div>
 
-      <div 
+      <div
         className="flex justify-start mb-2 animate-fadeIn"
         style={{
           transform: swipeTransform,
           transition: isSwiping ? 'none' : 'transform 200ms ease-out',
         }}
       >
-        <div 
+        <div
           className="max-w-[85%] sm:max-w-md px-3 py-1.5 rounded-lg shadow-lg bg-gray-800/90 backdrop-blur-xl text-gray-100 border border-gray-700/50"
           style={{ opacity: bubbleOpacity }}
         >
@@ -131,7 +142,7 @@ export const MessageBubble = ({ message, onReply, repliedMessage }: Props) => {
                   (Replied to a message that may have been deleted)
                 </div>
               )}
-              
+
               {/* Voice Message Player */}
               {message.voiceUrl ? (
                 <div className="flex items-center gap-3 bg-gray-700/50 rounded-lg p-3">
@@ -141,7 +152,7 @@ export const MessageBubble = ({ message, onReply, repliedMessage }: Props) => {
                     src={message.voiceUrl}
                     preload="metadata"
                   />
-                  
+
                   {/* Play/Pause Button */}
                   <button
                     onClick={togglePlayPause}
@@ -153,7 +164,7 @@ export const MessageBubble = ({ message, onReply, repliedMessage }: Props) => {
                       <Play className="w-4 h-4" />
                     )}
                   </button>
-                  
+
                   {/* Voice Icon and Duration */}
                   <div className="flex items-center gap-2">
                     <Volume2 className="w-4 h-4 text-gray-400" />
@@ -161,13 +172,13 @@ export const MessageBubble = ({ message, onReply, repliedMessage }: Props) => {
                       {formatAudioTime(currentTime)} / {formatAudioTime(duration)}
                     </span>
                   </div>
-                  
+
                   {/* Progress Bar */}
                   <div className="flex-1 h-1 bg-gray-600 rounded-full overflow-hidden">
-                    <div 
+                    <div
                       className="h-full bg-blue-500 transition-all duration-100"
-                      style={{ 
-                        width: duration > 0 ? `${(currentTime / duration) * 100}%` : '0%' 
+                      style={{
+                        width: duration > 0 ? `${(currentTime / duration) * 100}%` : '0%'
                       }}
                     />
                   </div>
