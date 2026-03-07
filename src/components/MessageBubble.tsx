@@ -68,7 +68,7 @@ export const MessageBubble = ({ message, onReply, repliedMessage, scrollToMessag
     };
   }, [message.voiceUrl]);
 
-  const togglePlayPause = () => {
+  const togglePlayPause = async () => {
     const audio = audioRef.current;
     if (!audio) return;
 
@@ -84,8 +84,15 @@ export const MessageBubble = ({ message, onReply, repliedMessage, scrollToMessag
         audio.currentTime = 0;
         setIsPlaying(false);
       });
-      audio.play();
-      setIsPlaying(true);
+      try {
+        setIsPlaying(true);
+        await audio.play();
+      } catch (err) {
+        // Browser rejected playback (autoplay policy, element unmounted, etc.)
+        console.warn('Audio playback failed:', err);
+        setIsPlaying(false);
+        audioManager.release(audio);
+      }
     }
   };
 
