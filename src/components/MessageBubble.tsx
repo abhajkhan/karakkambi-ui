@@ -17,7 +17,7 @@ export const MessageBubble = ({ message, onReply, repliedMessage, scrollToMessag
   const [isSwiping, setIsSwiping] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const [duration, setDuration] = useState(message.voiceDuration ?? 0);
   const audioRef = useRef<HTMLAudioElement>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
 
