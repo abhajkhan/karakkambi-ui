@@ -12,7 +12,7 @@ export const useSocket = (serverUrl: string) => {
   useEffect(() => {
     // Connect to external Socket.io server
     const socketIo = io(serverUrl, {
-      transports: ['polling', 'websocket'], // Try polling first
+      transports: ['websocket', 'polling'], // Prefer WebSocket, fall back to polling
       reconnection: true,
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
