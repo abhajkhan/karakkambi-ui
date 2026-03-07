@@ -17,11 +17,11 @@ interface UseVoiceRecorderReturn {
   pauseRecording: () => void;
   resumeRecording: () => void;
   cancelRecording: () => void;
-  uploadRecording: (blob?: Blob, replyTo?: string) => Promise<string | null>;
+  uploadRecording: (blob?: Blob, replyTo?: string, finalDuration?: number) => Promise<string | null>;
   reset: () => void;
 }
 
-export const useVoiceRecorder = (onVoiceMessage?: (voiceUrl: string, duration: number, size: number, replyTo?: string) => void): UseVoiceRecorderReturn => {
+export const useVoiceRecorder = (onVoiceMessage?: (voiceUrl: string, duration: number, size: number, replyTo?: string, cloudinaryPublicId?: string) => void): UseVoiceRecorderReturn => {
   const [state, setState] = useState<VoiceRecordingState>({
     isRecording: false,
     isPaused: false,
@@ -292,8 +292,10 @@ export const useVoiceRecorder = (onVoiceMessage?: (voiceUrl: string, duration: n
   }, [cleanup]);
 
   // Upload recording to Cloudinary
-  // Accepts an optional blob parameter to avoid stale closure issues
-  const uploadRecording = useCallback(async (blob?: Blob, replyTo?: string): Promise<string | null> => {
+  // Accepts an optional blob parameter to avoid stale closure issues.
+  // finalDuration should be passed explicitly by the caller (captured before stopRecording
+  // clears state) to avoid reading a stale state.duration from the closure.
+  const uploadRecording = useCallback(async (blob?: Blob, replyTo?: string, finalDuration?: number): Promise<string | null> => {
     const audioBlob = blob || state.audioBlob;
 
     if (!audioBlob) {
@@ -308,8 +310,9 @@ export const useVoiceRecorder = (onVoiceMessage?: (voiceUrl: string, duration: n
       const publicId = `voice_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       const timestamp = Math.floor(Date.now() / 1000);
 
-      // Get upload signature from backend
-      const signatureResponse = await fetch('http://localhost:5000/api/upload/signature', {
+      // Get upload signature from backend — use env var, not hardcoded localhost
+      const backendUrl = (import.meta.env.VITE_SOCKET_URL || 'http://localhost:4000').replace(/\/$/, '');
+      const signatureResponse = await fetch(`${backendUrl}/api/upload/signature`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -344,14 +347,17 @@ export const useVoiceRecorder = (onVoiceMessage?: (voiceUrl: string, duration: n
 
       const uploadResult = await uploadResponse.json();
       const voiceUrl = uploadResult.secure_url;
+      // public_id returned by Cloudinary — needed by backend for cleanup
+      const cloudinaryPublicId: string = uploadResult.public_id;
 
-      // Calculate duration and size
-      const duration = state.duration;
+      // Use explicitly passed finalDuration to avoid stale state closure.
+      // Fall back to state.duration only if not provided.
+      const duration = finalDuration !== undefined ? finalDuration : state.duration;
       const size = audioBlob.size;
 
       // Send voice message via callback
       if (onVoiceMessage) {
-        onVoiceMessage(voiceUrl, duration, size, replyTo);
+        onVoiceMessage(voiceUrl, duration, size, replyTo, cloudinaryPublicId);
       }
 
       setState(prev => ({

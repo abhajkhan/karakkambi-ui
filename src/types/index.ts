@@ -1,8 +1,11 @@
 export interface MessagePayload {
-  text: string
+  text?: string
   imageUrl?: string
   stickerUrl?: string
   voiceUrl?: string
+  voiceDuration?: number
+  voiceSize?: number
+  cloudinaryPublicId?: string
   replyTo?: string | null
 }
 

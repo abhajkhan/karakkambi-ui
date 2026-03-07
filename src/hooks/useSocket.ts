@@ -79,7 +79,7 @@ export const useSocket = (serverUrl: string) => {
     }
   };
 
-  const sendVoiceMessage = (voiceUrl: string, duration: number, size: number, replyTarget?: string): { success: boolean; error?: string } => {
+  const sendVoiceMessage = (voiceUrl: string, duration: number, size: number, replyTarget?: string, cloudinaryPublicId?: string): { success: boolean; error?: string } => {
     if (!socket) {
       return { success: false, error: 'Socket not initialized' };
     }
@@ -95,6 +95,7 @@ export const useSocket = (serverUrl: string) => {
         voiceUrl,
         voiceDuration: duration,
         voiceSize: size,
+        cloudinaryPublicId,
         replyTo: replyTarget
       };
       socket.emit('send_message', payload);

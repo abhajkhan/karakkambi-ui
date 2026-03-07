@@ -4,7 +4,7 @@ import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
 import { audioManager } from '../utils/audioManager';
 
 interface Props {
-  onVoiceMessage: (voiceUrl: string, duration: number, size: number, replyTo?: string) => void;
+  onVoiceMessage: (voiceUrl: string, duration: number, size: number, replyTo?: string, cloudinaryPublicId?: string) => void;
   replyTo?: string | null;
   onCancel: () => void;
 }
@@ -41,10 +41,14 @@ export const VoiceRecorder: React.FC<Props> = ({ onVoiceMessage, replyTo, onCanc
     if (!state.isRecording && !state.isPaused) return;
 
     setIsProcessing(true);
+    // Snapshot duration NOW before stopRecording resets state asynchronously.
+    // This is the fix for the stale-closure bug where state.duration read
+    // inside uploadRecording would be 0 (already cleared).
+    const durationSnapshot = state.duration;
     try {
       const blob = await stopRecording();
-      // Pass blob directly to uploadRecording to avoid stale closure
-      await uploadRecording(blob, replyTo || undefined);
+      // Pass blob and durationSnapshot directly to avoid stale closure
+      await uploadRecording(blob, replyTo || undefined, durationSnapshot);
       onCancel(); // Close the recorder after sending
     } catch (error) {
       console.error('Error sending recording:', error);
@@ -52,7 +56,7 @@ export const VoiceRecorder: React.FC<Props> = ({ onVoiceMessage, replyTo, onCanc
     } finally {
       setIsProcessing(false);
     }
-  }, [state.isRecording, state.isPaused, isProcessing, stopRecording, uploadRecording, replyTo, cancelRecording, onCancel]);
+  }, [state.isRecording, state.isPaused, state.duration, isProcessing, stopRecording, uploadRecording, replyTo, cancelRecording, onCancel]);
 
   // Handle cancel
   const handleCancel = useCallback(() => {

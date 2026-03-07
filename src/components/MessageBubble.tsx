@@ -9,15 +9,39 @@ interface Props {
   message: Message;
   onReply: (message: Message) => void;
   repliedMessage?: Message | null;
+  scrollToMessage?: (messageId: string) => void;
 }
 
-export const MessageBubble = ({ message, onReply, repliedMessage }: Props) => {
+export const MessageBubble = ({ message, onReply, repliedMessage, scrollToMessage }: Props) => {
   const [swipeProgress, setSwipeProgress] = useState(0);
   const [isSwiping, setIsSwiping] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const bubbleRef = useRef<HTMLDivElement>(null);
+
+  // Flash highlight when this message is scrolled to
+  const triggerHighlight = () => {
+    const el = bubbleRef.current;
+    if (!el) return;
+    el.classList.remove('msg-highlight');
+    // Force reflow so re-adding the class restarts the animation
+    void el.offsetHeight;
+    el.classList.add('msg-highlight');
+    const timer = setTimeout(() => el.classList.remove('msg-highlight'), 1400);
+    return () => clearTimeout(timer);
+  };
+
+  // Expose triggerHighlight via a data attribute on the DOM element so the
+  // parent can call it by looking up the element by id
+  // (avoids prop-drilling a ref callback)
+  useEffect(() => {
+    const el = document.getElementById(`msg-${message.id}`);
+    if (el) {
+      (el as any).__triggerHighlight = triggerHighlight;
+    }
+  });
 
   // Handle audio playback
   useEffect(() => {
@@ -99,7 +123,7 @@ export const MessageBubble = ({ message, onReply, repliedMessage }: Props) => {
   const bubbleOpacity = isSwiping ? Math.max(1 - swipeProgress * 0.3, 0.7) : 1;
 
   return (
-    <div {...handlers} className="relative group">
+    <div {...handlers} className="relative group" id={`msg-${message.id}`} ref={bubbleRef}>
       {/* Reply indicator that appears behind the bubble */}
       <div
         className="absolute left-0 top-1/2 -translate-y-1/2 flex items-center gap-2 transition-opacity duration-150"
@@ -133,9 +157,22 @@ export const MessageBubble = ({ message, onReply, repliedMessage }: Props) => {
             {/* Message Content: text or voice */}
             <div className="text-[14px] leading-relaxed break-words flex-grow min-w-0">
               {repliedMessage && (
-                <div className="text-xs text-gray-400 border-l-2 border-blue-500 pl-2 mb-1">
-                  {repliedMessage.text}
-                </div>
+                <button
+                  onClick={() => scrollToMessage?.(repliedMessage.id)}
+                  className="w-full text-left text-xs text-gray-400 border-l-2 border-blue-500 pl-2 mb-1 flex items-center gap-1.5 hover:text-gray-200 hover:border-blue-400 transition-colors cursor-pointer rounded-sm"
+                  title="Jump to message"
+                >
+                  {repliedMessage.voiceUrl ? (
+                    <>
+                      <svg className="w-3 h-3 text-gray-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                      </svg>
+                      <span className="italic">Voice message</span>
+                    </>
+                  ) : (
+                    <span className="truncate">{repliedMessage.text}</span>
+                  )}
+                </button>
               )}
               {message.replyTo && !repliedMessage && (
                 <div className="text-xs text-gray-400 border-l-2 border-blue-500 pl-2 mb-1">

@@ -121,8 +121,8 @@ export const ChatRoom = () => {
   };
 
   // Handle voice message
-  const handleVoiceMessage = (voiceUrl: string, duration: number, size: number, replyTo?: string) => {
-    const result = sendVoiceMessage(voiceUrl, duration, size, replyTo);
+  const handleVoiceMessage = (voiceUrl: string, duration: number, size: number, replyTo?: string, cloudinaryPublicId?: string) => {
+    const result = sendVoiceMessage(voiceUrl, duration, size, replyTo, cloudinaryPublicId);
     if (!result.success) {
       setValidationError(result.error || 'Failed to send voice message');
     } else {
@@ -174,6 +174,27 @@ export const ChatRoom = () => {
     }
 
     return null;
+  };
+
+  // Scroll to and highlight a specific message
+  const scrollToMessage = (messageId: string) => {
+    const container = scrollContainerRef.current;
+    const el = document.getElementById(`msg-${messageId}`);
+    if (!el || !container) return;
+
+    // Calculate the element's position relative to the scroll container
+    const containerRect = container.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    const relativeTop = elRect.top - containerRect.top + container.scrollTop;
+
+    // Scroll so the message sits comfortably in the middle of the viewport
+    const offset = relativeTop - container.clientHeight / 2 + elRect.height / 2;
+    container.scrollTo({ top: offset, behavior: 'smooth' });
+
+    // Trigger highlight flash after a short delay to let scroll settle
+    setTimeout(() => {
+      (el as any).__triggerHighlight?.();
+    }, 350);
   };
 
   return (
@@ -298,6 +319,7 @@ export const ChatRoom = () => {
                   }}
                   onReply={setReplyTarget}
                   repliedMessage={repliedMessage}
+                  scrollToMessage={scrollToMessage}
                 />
               </React.Fragment>
             );
@@ -397,9 +419,18 @@ export const ChatRoom = () => {
                   <p className="text-xs text-blue-400 font-medium mb-0.5">
                     Replying to
                   </p>
-                  <p className="text-sm text-gray-300 truncate">
-                    {replyTarget.text}
-                  </p>
+                  {replyTarget.voiceUrl ? (
+                    <p className="text-sm text-gray-300 flex items-center gap-1.5">
+                      <svg className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                      </svg>
+                      <span className="italic text-gray-400">Voice message</span>
+                    </p>
+                  ) : (
+                    <p className="text-sm text-gray-300 truncate">
+                      {replyTarget.text || '(empty message)'}
+                    </p>
+                  )}
                 </div>
 
                 {/* Cancel Reply Button */}
@@ -487,6 +518,17 @@ export const ChatRoom = () => {
           to { opacity: 1; transform: translateY(0); }
         }
         .animate-fadeIn { animation: fadeIn 0.3s ease-out; }
+
+        @keyframes msgHighlight {
+          0%   { background-color: transparent; }
+          20%  { background-color: rgba(59, 130, 246, 0.18); }
+          60%  { background-color: rgba(59, 130, 246, 0.12); }
+          100% { background-color: transparent; }
+        }
+        .msg-highlight {
+          border-radius: 8px;
+          animation: msgHighlight 1.4s ease-out forwards;
+        }
 
         /* Prevent horizontal overflow from long words/children */
         html, body, #root { overflow-x: hidden; }
