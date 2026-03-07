@@ -42,17 +42,32 @@ export const VoiceRecorder: React.FC<Props> = ({ onVoiceMessage, replyTo, onCanc
 
     setIsProcessing(true);
     // Snapshot duration NOW before stopRecording resets state asynchronously.
-    // This is the fix for the stale-closure bug where state.duration read
-    // inside uploadRecording would be 0 (already cleared).
     const durationSnapshot = state.duration;
+
+    // --- Phase 1: stop the recorder ---
+    // If stopRecording throws, the recorder is in an unknown state so we must
+    // clean up via cancelRecording() and exit early.
+    let blob: Blob;
     try {
-      const blob = await stopRecording();
-      // Pass blob and durationSnapshot directly to avoid stale closure
+      blob = await stopRecording();
+    } catch (stopError) {
+      console.error('Error stopping recording:', stopError);
+      cancelRecording(); // recorder state is unknown — clean up fully
+      setIsProcessing(false);
+      return;
+    }
+
+    // --- Phase 2: upload the blob ---
+    // stopRecording already succeeded: MediaRecorder is stopped and stream released.
+    // Calling cancelRecording() here would silently discard audioBlob state and give
+    // the user no way to retry. Instead, let uploadRecording surface the error via
+    // state.error and keep the recorder UI visible so the user can see what failed.
+    try {
       await uploadRecording(blob, replyTo || undefined, durationSnapshot);
-      onCancel(); // Close the recorder after sending
-    } catch (error) {
-      console.error('Error sending recording:', error);
-      cancelRecording();
+      onCancel(); // success — close the recorder
+    } catch (uploadError) {
+      // uploadRecording already sets state.error internally — just log here.
+      console.error('Error uploading recording:', uploadError);
     } finally {
       setIsProcessing(false);
     }
