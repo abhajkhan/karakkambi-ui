@@ -41,7 +41,7 @@ export const MessageBubble = ({ message, onReply, repliedMessage, scrollToMessag
     if (el) {
       (el as any).__triggerHighlight = triggerHighlight;
     }
-  });
+  }, [message.id]);
 
   // Handle audio playback
   useEffect(() => {
