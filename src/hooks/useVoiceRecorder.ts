@@ -314,7 +314,7 @@ export const useVoiceRecorder = (onVoiceMessage?: (voiceUrl: string, duration: n
       setState(prev => ({ ...prev, isUploading: true, uploadProgress: 0, error: null }));
 
       // Generate unique public ID
-      const publicId = `voice_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const publicId = `voice_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
       const timestamp = Math.floor(Date.now() / 1000);
 
       // Get upload signature from backend — use env var, not hardcoded localhost
