@@ -12,8 +12,11 @@ export const useSocket = (serverUrl: string) => {
   useEffect(() => {
     // Connect to external Socket.io server
     const socketIo = io(serverUrl, {
-      transports: ['websocket', 'polling'],
+      transports: ['websocket', 'polling'], // Prefer WebSocket, fall back to polling
       reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      timeout: 20000,
     });
 
     socketIo.on('connect', () => {
@@ -23,6 +26,11 @@ export const useSocket = (serverUrl: string) => {
 
     socketIo.on('disconnect', () => {
       console.log('Disconnected from server');
+      setConnected(false);
+    });
+
+    socketIo.on('connect_error', (error) => {
+      console.error('Connection error:', error);
       setConnected(false);
     });
 
@@ -71,5 +79,32 @@ export const useSocket = (serverUrl: string) => {
     }
   };
 
-  return { socket, messages, sendMessage, onlineUsers, connected };
+  const sendVoiceMessage = (voiceUrl: string, duration: number, size: number, replyTarget?: string, cloudinaryPublicId?: string): { success: boolean; error?: string } => {
+    if (!socket) {
+      return { success: false, error: 'Socket not initialized' };
+    }
+    if (!connected) {
+      return { success: false, error: 'Not connected to server' };
+    }
+    if (!voiceUrl.trim()) {
+      return { success: false, error: 'Voice URL cannot be empty' };
+    }
+
+    try {
+      const payload = {
+        voiceUrl,
+        voiceDuration: duration,
+        voiceSize: size,
+        cloudinaryPublicId,
+        replyTo: replyTarget
+      };
+      socket.emit('send_message', payload);
+      return { success: true };
+    } catch (error) {
+      console.error('Error sending voice message:', error);
+      return { success: false, error: 'Failed to send voice message' };
+    }
+  };
+
+  return { socket, messages, sendMessage, sendVoiceMessage, onlineUsers, connected };
 };

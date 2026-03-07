@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useSocket } from '../hooks/useSocket';
 import { getDateKey, formatDateForDisplay } from '../utils/timeFormatter';
 import { MessageBubble } from './MessageBubble';
-import { Send, Users, Wifi, WifiOff } from 'lucide-react';
+import { VoiceRecorder } from './VoiceRecorder';
+import { Send, Users, Wifi, WifiOff, Mic } from 'lucide-react';
 import type { Message } from '../types/index'
 import { get_messages } from '../services/messageService';
 import { MAX_MESSAGE_LENGTH, MESSAGE_COOLDOWN } from '../constants';
@@ -19,7 +20,8 @@ export const ChatRoom = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
-  const { messages: socketMessages, sendMessage, onlineUsers, connected } = useSocket(SOCKET_SERVER_URL);
+  const [isVoiceRecording, setIsVoiceRecording] = useState(false);
+  const { messages: socketMessages, sendMessage, sendVoiceMessage, onlineUsers, connected } = useSocket(SOCKET_SERVER_URL);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isInitialLoadRef = useRef(true);
@@ -118,6 +120,28 @@ export const ChatRoom = () => {
     }
   };
 
+  // Handle voice message
+  const handleVoiceMessage = (voiceUrl: string, duration: number, size: number, replyTo?: string, cloudinaryPublicId?: string) => {
+    const result = sendVoiceMessage(voiceUrl, duration, size, replyTo, cloudinaryPublicId);
+    if (!result.success) {
+      setValidationError(result.error || 'Failed to send voice message');
+    } else {
+      setReplyTarget(null);
+      setValidationError(null);
+      lastMessageTimeRef.current = Date.now();
+    }
+  };
+
+  // Toggle voice recording mode
+  const toggleVoiceRecording = () => {
+    setIsVoiceRecording(!isVoiceRecording);
+  };
+
+  // Cancel voice recording
+  const cancelVoiceRecording = () => {
+    setIsVoiceRecording(false);
+  };
+
   // Combine and sort all messages
   const allMessages = [...historicalMessages, ...socketMessages].sort((a, b) => {
     return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
@@ -150,6 +174,27 @@ export const ChatRoom = () => {
     }
 
     return null;
+  };
+
+  // Scroll to and highlight a specific message
+  const scrollToMessage = (messageId: string) => {
+    const container = scrollContainerRef.current;
+    const el = document.getElementById(`msg-${messageId}`);
+    if (!el || !container) return;
+
+    // Calculate the element's position relative to the scroll container
+    const containerRect = container.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    const relativeTop = elRect.top - containerRect.top + container.scrollTop;
+
+    // Scroll so the message sits comfortably in the middle of the viewport
+    const offset = relativeTop - container.clientHeight / 2 + elRect.height / 2;
+    container.scrollTo({ top: offset, behavior: 'smooth' });
+
+    // Trigger highlight flash after a short delay to let scroll settle
+    setTimeout(() => {
+      (el as any).__triggerHighlight?.();
+    }, 350);
   };
 
   return (
@@ -273,7 +318,8 @@ export const ChatRoom = () => {
                     createdAt: msg.createdAt
                   }}
                   onReply={setReplyTarget}
-                  repliedMessage = {repliedMessage}
+                  repliedMessage={repliedMessage}
+                  scrollToMessage={scrollToMessage}
                 />
               </React.Fragment>
             );
@@ -340,10 +386,9 @@ export const ChatRoom = () => {
       >
         <div className="max-w-4xl w-full mx-auto px-4 sm:px-6 box-border">
           {/* Reply Preview Section */}
-          <div 
-            className={`overflow-hidden transition-all duration-300 ease-out ${
-              replyTarget ? 'max-h-20 opacity-100 mb-2' : 'max-h-0 opacity-0'
-            }`}
+          <div
+            className={`overflow-hidden transition-all duration-300 ease-out ${replyTarget ? 'max-h-20 opacity-100 mb-2' : 'max-h-0 opacity-0'
+              }`}
           >
             {replyTarget && (
               <div className="flex items-start gap-3 px-4 py-3 bg-gradient-to-r from-gray-800/95 to-gray-800/80 backdrop-blur-xl rounded-xl border border-blue-500/30 shadow-lg shadow-blue-500/10 animate-fadeIn">
@@ -351,50 +396,59 @@ export const ChatRoom = () => {
                 <div className="flex flex-col items-center gap-1 pt-0.5">
                   <div className="w-0.5 h-full min-h-[20px] bg-gradient-to-b from-blue-500 to-blue-400 rounded-full" />
                 </div>
-                
+
                 {/* Reply Icon */}
                 <div className="flex-shrink-0 mt-0.5">
-                  <svg 
-                    className="w-4 h-4 text-blue-400" 
-                    fill="none" 
-                    viewBox="0 0 24 24" 
+                  <svg
+                    className="w-4 h-4 text-blue-400"
+                    fill="none"
+                    viewBox="0 0 24 24"
                     stroke="currentColor"
                     strokeWidth={2}
                   >
-                    <path 
-                      strokeLinecap="round" 
-                      strokeLinejoin="round" 
-                      d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" 
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"
                     />
                   </svg>
                 </div>
-                
+
                 {/* Reply Content */}
                 <div className="flex-1 min-w-0">
                   <p className="text-xs text-blue-400 font-medium mb-0.5">
                     Replying to
                   </p>
-                  <p className="text-sm text-gray-300 truncate">
-                    {replyTarget.text}
-                  </p>
+                  {replyTarget.voiceUrl ? (
+                    <p className="text-sm text-gray-300 flex items-center gap-1.5">
+                      <svg className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                      </svg>
+                      <span className="italic text-gray-400">Voice message</span>
+                    </p>
+                  ) : (
+                    <p className="text-sm text-gray-300 truncate">
+                      {replyTarget.text || '(empty message)'}
+                    </p>
+                  )}
                 </div>
-                
+
                 {/* Cancel Reply Button */}
                 <button
                   onClick={() => setReplyTarget(null)}
                   className="flex-shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-700/50 transition-all active:scale-90"
                 >
-                  <svg 
-                    className="w-4 h-4" 
-                    fill="none" 
-                    viewBox="0 0 24 24" 
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    viewBox="0 0 24 24"
                     stroke="currentColor"
                     strokeWidth={2}
                   >
-                    <path 
-                      strokeLinecap="round" 
-                      strokeLinejoin="round" 
-                      d="M6 18L18 6M6 6l12 12" 
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M6 18L18 6M6 6l12 12"
                     />
                   </svg>
                 </button>
@@ -402,31 +456,51 @@ export const ChatRoom = () => {
             )}
           </div>
 
-          {/* Input Field */}
-          <form onSubmit={handleSubmit} className="flex gap-2 sm:gap-3 items-center min-w-0">
-            <input
-              type="text"
-              value={inputMessage}
-              onChange={(e) => {
-                setInputMessage(e.target.value);
-                if (validationError) setValidationError(null);
-              }}
-              onKeyPress={handleKeyPress}
-              placeholder="Type your message..."
-              disabled={!connected || isLoading}
-              className={`flex-1 min-w-0 px-4 py-2.5 bg-gray-800/90 backdrop-blur-xl text-gray-100 placeholder-gray-500 rounded-2xl border focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg text-[15px] ${inputMessage.length > MAX_MESSAGE_LENGTH ? 'border-red-500/50' : 'border-gray-700/50'
-                }`}
-              autoComplete="off"
+          {/* Input Field or Voice Recorder */}
+          {!isVoiceRecording ? (
+            <form onSubmit={handleSubmit} className="flex gap-2 sm:gap-3 items-center min-w-0">
+              <input
+                type="text"
+                value={inputMessage}
+                onChange={(e) => {
+                  setInputMessage(e.target.value);
+                  if (validationError) setValidationError(null);
+                }}
+                onKeyPress={handleKeyPress}
+                placeholder="Type your message..."
+                disabled={!connected || isLoading}
+                className={`flex-1 min-w-0 px-4 py-2.5 bg-gray-800/90 backdrop-blur-xl text-gray-100 placeholder-gray-500 rounded-2xl border focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg text-[15px] ${inputMessage.length > MAX_MESSAGE_LENGTH ? 'border-red-500/50' : 'border-gray-700/50'
+                  }`}
+                autoComplete="off"
+              />
+
+              {/* Microphone Button */}
+              <button
+                type="button"
+                onClick={toggleVoiceRecording}
+                disabled={!connected || isLoading}
+                className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-600 hover:bg-gray-500 text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Mic className="w-4 h-4" />
+              </button>
+
+              <button
+                type="submit"
+                disabled={!connected || !inputMessage.trim() || isLoading}
+                className="flex items-center justify-center gap-2 font-medium flex-shrink-0 px-3 sm:px-6 py-3 bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-2xl hover:from-blue-500 hover:to-blue-600 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-500/20 disabled:shadow-none"
+              >
+                <Send className="w-4 h-4" />
+                <span className="hidden sm:inline text-sm">Send</span>
+              </button>
+            </form>
+          ) : (
+            /* Voice Recorder */
+            <VoiceRecorder
+              onVoiceMessage={handleVoiceMessage}
+              replyTo={replyTarget?.id || undefined}
+              onCancel={cancelVoiceRecording}
             />
-            <button
-              type="submit"
-              disabled={!connected || !inputMessage.trim() || isLoading}
-              className="flex items-center justify-center gap-2 font-medium flex-shrink-0 px-3 sm:px-6 py-3 bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-2xl hover:from-blue-500 hover:to-blue-600 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-500/20 disabled:shadow-none"
-            >
-              <Send className="w-4 h-4" />
-              <span className="hidden sm:inline text-sm">Send</span>
-            </button>
-          </form>
+          )}
 
           {/* Validation Feedback */}
           {validationError && (
@@ -444,6 +518,17 @@ export const ChatRoom = () => {
           to { opacity: 1; transform: translateY(0); }
         }
         .animate-fadeIn { animation: fadeIn 0.3s ease-out; }
+
+        @keyframes msgHighlight {
+          0%   { background-color: transparent; }
+          20%  { background-color: rgba(59, 130, 246, 0.18); }
+          60%  { background-color: rgba(59, 130, 246, 0.12); }
+          100% { background-color: transparent; }
+        }
+        .msg-highlight {
+          border-radius: 8px;
+          animation: msgHighlight 1.4s ease-out forwards;
+        }
 
         /* Prevent horizontal overflow from long words/children */
         html, body, #root { overflow-x: hidden; }
