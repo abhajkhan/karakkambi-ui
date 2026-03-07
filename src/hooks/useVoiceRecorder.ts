@@ -131,6 +131,8 @@ export const useVoiceRecorder = (onVoiceMessage?: (voiceUrl: string, duration: n
 
       mediaRecorder.onerror = (event) => {
         console.error('MediaRecorder error:', event);
+        // Release the mic and clear all refs so they don't stay open after an error
+        cleanup();
         setState(prev => ({
           ...prev,
           error: 'Recording error occurred',
@@ -164,6 +166,11 @@ export const useVoiceRecorder = (onVoiceMessage?: (voiceUrl: string, duration: n
 
     } catch (error) {
       console.error('Error starting recording:', error);
+      // cleanup() stops the mic stream and clears mediaRecorderRef / streamRef / chunksRef.
+      // This is critical when the error occurs after the stream and recorder were already
+      // assigned (e.g. recorder state check failure at line 148) — without this the
+      // microphone remains open indefinitely.
+      cleanup();
       setState(prev => ({
         ...prev,
         error: error instanceof Error ? error.message : 'Failed to access microphone',
