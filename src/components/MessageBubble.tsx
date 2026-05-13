@@ -1,7 +1,6 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import type { Message } from '../types';
 import { formatTimeOnly } from '../utils/timeFormatter';
-import { useSwipeable } from "react-swipeable";
 import { Play, Pause, Volume2 } from 'lucide-react';
 import { audioManager } from '../utils/audioManager';
 
@@ -12,14 +11,31 @@ interface Props {
   scrollToMessage?: (messageId: string) => void;
 }
 
+// --- Swipe constants ---
+const SWIPE_MAX_PX = 100;          // maximum visual displacement
+const SWIPE_TRIGGER_RATIO = 0.30;  // must drag ≥30% of max to trigger reply
+const DIRECTION_LOCK_PX = 10;      // dead-zone before committing to horizontal/vertical
+const SPRING_BACK_MS = 250;        // snap-back transition duration
+
 export const MessageBubble = ({ message, onReply, repliedMessage, scrollToMessage }: Props) => {
-  const [swipeProgress, setSwipeProgress] = useState(0);
-  const [isSwiping, setIsSwiping] = useState(false);
+  // --- Audio state ---
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(message.voiceDuration ?? 0);
   const audioRef = useRef<HTMLAudioElement>(null);
+
+  // --- Swipe refs (no re-renders during gesture) ---
   const bubbleRef = useRef<HTMLDivElement>(null);
+  const innerRef = useRef<HTMLDivElement>(null);
+  const replyIndicatorRef = useRef<HTMLDivElement>(null);
+
+  const pointerId = useRef<number | null>(null);
+  const startX = useRef(0);
+  const startY = useRef(0);
+  const locked = useRef<'none' | 'horizontal' | 'vertical'>('none');
+  const rafId = useRef(0);
+  const currentDeltaX = useRef(0);
+  const didTrigger = useRef(false);
 
   // Flash highlight when this message is scrolled to
   const triggerHighlight = () => {
@@ -35,7 +51,6 @@ export const MessageBubble = ({ message, onReply, repliedMessage, scrollToMessag
 
   // Expose triggerHighlight via a data attribute on the DOM element so the
   // parent can call it by looking up the element by id
-  // (avoids prop-drilling a ref callback)
   useEffect(() => {
     const el = document.getElementById(`msg-${message.id}`);
     if (el) {
@@ -43,7 +58,7 @@ export const MessageBubble = ({ message, onReply, repliedMessage, scrollToMessag
     }
   }, [message.id]);
 
-  // Handle audio playback
+  // ---------- Audio playback ----------
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !message.voiceUrl) return;
@@ -103,39 +118,122 @@ export const MessageBubble = ({ message, onReply, repliedMessage, scrollToMessag
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const handlers = useSwipeable({
-    onSwipeStart: () => setIsSwiping(true),
-    onSwiped: () => {
-      setIsSwiping(false);
-      setSwipeProgress(0);
-    },
-    onSwiping: (event) => {
-      // Only track right swipes (positive delta)
-      if (event.deltaX > 0) {
-        // Calculate progress (0 to 1) with max 100px swipe distance
-        const progress = Math.min(event.deltaX / 100, 1);
-        setSwipeProgress(progress);
-      }
-    },
-    onSwipedRight: () => onReply(message),
-    delta: 30, // Lower threshold for more responsive feel
-    preventScrollOnSwipe: true,
-    trackTouch: true,
-    trackMouse: true, // Enable for desktop touchpad
-  });
+  // ---------- Swipe-to-reply via Pointer Events ----------
 
-  // Calculate transform based on swipe progress
-  const swipeTransform = isSwiping ? `translateX(${swipeProgress * 80}px)` : 'translateX(0)';
-  const replyOpacity = isSwiping ? Math.min(swipeProgress * 1.5, 1) : 0;
-  const bubbleOpacity = isSwiping ? Math.max(1 - swipeProgress * 0.3, 0.7) : 1;
+  /** Apply visual transform on each frame. Runs off-main-thread via rAF. */
+  const applySwipeTransform = useCallback((dx: number, transition: string) => {
+    const inner = innerRef.current;
+    const indicator = replyIndicatorRef.current;
+    if (!inner) return;
+
+    const clamped = Math.max(0, Math.min(dx, SWIPE_MAX_PX));
+    const progress = clamped / SWIPE_MAX_PX; // 0..1
+
+    inner.style.transform = `translateX(${clamped}px)`;
+    inner.style.transition = transition;
+    inner.style.opacity = `${Math.max(1 - progress * 0.3, 0.7)}`;
+
+    if (indicator) {
+      indicator.style.opacity = `${Math.min(progress * 1.5, 1)}`;
+      indicator.style.transition = transition;
+    }
+  }, []);
+
+  /** Reset swipe visual to resting state */
+  const resetSwipe = useCallback(() => {
+    applySwipeTransform(0, `transform ${SPRING_BACK_MS}ms ease-out, opacity ${SPRING_BACK_MS}ms ease-out`);
+    currentDeltaX.current = 0;
+    locked.current = 'none';
+    didTrigger.current = false;
+  }, [applySwipeTransform]);
+
+  const onPointerDown = useCallback((e: React.PointerEvent) => {
+    // Only track primary pointer (left mouse / single finger)
+    if (!e.isPrimary) return;
+
+    pointerId.current = e.pointerId;
+    startX.current = e.clientX;
+    startY.current = e.clientY;
+    locked.current = 'none';
+    didTrigger.current = false;
+    currentDeltaX.current = 0;
+
+    // Capture the pointer so we receive move/up even if finger moves off element
+    (e.target as Element).setPointerCapture(e.pointerId);
+  }, []);
+
+  const onPointerMove = useCallback((e: React.PointerEvent) => {
+    if (pointerId.current === null || e.pointerId !== pointerId.current) return;
+
+    const dx = e.clientX - startX.current;
+    const dy = e.clientY - startY.current;
+
+    // Direction locking
+    if (locked.current === 'none') {
+      if (Math.abs(dx) < DIRECTION_LOCK_PX && Math.abs(dy) < DIRECTION_LOCK_PX) {
+        return; // still in dead zone
+      }
+      locked.current = Math.abs(dx) >= Math.abs(dy) ? 'horizontal' : 'vertical';
+    }
+
+    // If vertical, bail — let native scroll handle it
+    if (locked.current === 'vertical') return;
+
+    // Horizontal swipe: only track rightward
+    const rightDelta = Math.max(0, dx);
+    currentDeltaX.current = rightDelta;
+
+    cancelAnimationFrame(rafId.current);
+    rafId.current = requestAnimationFrame(() => {
+      applySwipeTransform(rightDelta, 'none');
+    });
+  }, [applySwipeTransform]);
+
+  const onPointerUp = useCallback((e: React.PointerEvent) => {
+    if (pointerId.current === null || e.pointerId !== pointerId.current) return;
+
+    cancelAnimationFrame(rafId.current);
+
+    // Check if swipe exceeded trigger threshold
+    const progress = currentDeltaX.current / SWIPE_MAX_PX;
+    if (locked.current === 'horizontal' && progress >= SWIPE_TRIGGER_RATIO && !didTrigger.current) {
+      didTrigger.current = true;
+      onReply(message);
+    }
+
+    // Snap back
+    resetSwipe();
+    pointerId.current = null;
+  }, [message, onReply, resetSwipe]);
+
+  const onPointerCancel = useCallback((e: React.PointerEvent) => {
+    if (pointerId.current === null || e.pointerId !== pointerId.current) return;
+    cancelAnimationFrame(rafId.current);
+    resetSwipe();
+    pointerId.current = null;
+  }, [resetSwipe]);
 
   return (
-    <div {...handlers} className="relative group" id={`msg-${message.id}`} ref={bubbleRef}>
+    <div
+      className="relative group"
+      id={`msg-${message.id}`}
+      ref={bubbleRef}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+      style={{
+        touchAction: 'pan-y',  // allow vertical scroll, we handle horizontal ourselves
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+      }}
+    >
       {/* Reply indicator that appears behind the bubble */}
       <div
-        className="absolute left-0 top-1/2 -translate-y-1/2 flex items-center gap-2 transition-opacity duration-150"
+        ref={replyIndicatorRef}
+        className="absolute left-0 top-1/2 -translate-y-1/2 flex items-center gap-2"
         style={{
-          opacity: replyOpacity,
+          opacity: 0,
           pointerEvents: 'none'
         }}
       >
@@ -145,15 +243,15 @@ export const MessageBubble = ({ message, onReply, repliedMessage, scrollToMessag
       </div>
 
       <div
+        ref={innerRef}
         className="flex justify-start mb-2 animate-fadeIn"
         style={{
-          transform: swipeTransform,
-          transition: isSwiping ? 'none' : 'transform 200ms ease-out',
+          transform: 'translateX(0)',
+          willChange: 'transform',
         }}
       >
         <div
           className="max-w-[85%] sm:max-w-md px-3 py-1.5 rounded-lg shadow-lg bg-gray-800/90 backdrop-blur-xl text-gray-100 border border-gray-700/50"
-          style={{ opacity: bubbleOpacity }}
         >
 
           {/* Flex container that wraps. 
